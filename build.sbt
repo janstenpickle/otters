@@ -12,6 +12,7 @@ lazy val root = (project in file(".")).
     libraryDependencies ++= Seq(
       akkaStreams,
       cats,
+      scalaCheck % Test,
       scalaTest % Test
     ),
     addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.4")
