@@ -1,7 +1,7 @@
-package stateflow
+package statestream
 
 import akka.NotUsed
-import akka.stream.scaladsl.{Flow, GraphDSL, Keep, RunnableGraph, Sink, Source, Unzip}
+import akka.stream.scaladsl.{Flow, GraphDSL, Keep, RunnableGraph, Sink, Source, Unzip, Zip}
 import akka.stream.{FlowShape, OverflowStrategy, SinkShape}
 import cats.data.{IndexedStateT, State, StateT}
 import cats.instances.future._
@@ -13,8 +13,8 @@ import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future}
 
-trait IndexedStateFlowBase[F[_], SA, SB, A] {
-  type Return[SC, SD, B] <: IndexedStateFlowBase[F, SC, SD, B]
+trait IndexedStateSourceBase[F[_], SA, SB, A] {
+  type Return[SC, SD, B] <: IndexedStateSourceBase[F, SC, SD, B]
 
   val stream: Source[IndexedStateT[F, SA, SB, A], NotUsed]
 
@@ -43,11 +43,11 @@ trait IndexedStateFlowBase[F[_], SA, SB, A] {
 }
 
 trait WithComonad[F[_]] {
-  protected def CM: Comonad[F]
+  protected def CF: Comonad[F]
 }
 
-trait WithFunctorK[F[_]] {
-  protected def FK: F ~> Future
+trait WithNat[F[_]] {
+  protected def nat: F ~> Future
 }
 
 trait IndexedFlowStateTupleBase[F[_], SA, SB, A] {
@@ -58,29 +58,46 @@ trait IndexedFlowStateTupleBase[F[_], SA, SB, A] {
 trait IndexedFlowStateTupleComonad[F[_], SA, SB, A]
     extends IndexedFlowStateTupleBase[F, SA, SB, A]
     with WithComonad[F] {
-  self: IndexedStateFlowBase[F, SA, SB, A] =>
+  self: IndexedStateSourceBase[F, SA, SB, A] =>
 
   def toTuple(implicit F: FlatMap[F], SA: Monoid[SA], SB: Monoid[SB]): Source[(SB, A), NotUsed] =
-    stream.map(d => CM.extract(d.runEmpty))
+    stream.map(d => CF.extract(d.runEmpty))
 
   def toTuple(initial: SA)(implicit F: FlatMap[F]): Source[(SB, A), NotUsed] =
-    stream.map(d => CM.extract(d.run(initial)))
+    stream.map(d => CF.extract(d.run(initial)))
 }
 
-trait IndexedStateFlowTupleFunctorK[F[_], SA, SB, A]
-    extends IndexedFlowStateTupleBase[F, SA, SB, A]
-    with WithFunctorK[F] {
-  self: IndexedStateFlowBase[F, SA, SB, A] =>
+trait IndexedStateSourceTupleNat[F[_], SA, SB, A] extends IndexedFlowStateTupleBase[F, SA, SB, A] with WithNat[F] {
+  self: IndexedStateSourceBase[F, SA, SB, A] =>
 
   def toTuple(implicit F: FlatMap[F], SA: Monoid[SA], SB: Monoid[SB]): Source[(SB, A), NotUsed] =
-    stream.mapAsync(1)(d => FK(d.runEmpty))
+    stream.mapAsync(1)(d => nat(d.runEmpty))
 
   def toTuple(initial: SA)(implicit F: FlatMap[F]): Source[(SB, A), NotUsed] =
-    stream.mapAsync(1)(d => FK(d.run(initial)))
+    stream.mapAsync(1)(d => nat(d.run(initial)))
 }
 
-trait IndexedStateFlowSink[F[_], SA, SB, A] {
-  self: IndexedStateFlowBase[F, SA, SB, A] with IndexedFlowStateTupleBase[F, SA, SB, A] =>
+trait IndexedStateSourceStreamOps[F[_], SA, SB, A] {
+  self: IndexedStateSourceBase[F, SA, SB, A] with IndexedFlowStateTupleBase[F, SA, SB, A] =>
+
+  def via[SC, B](
+    stateFlow: Flow[SB, SC, NotUsed],
+    dataFlow: Flow[A, B, NotUsed]
+  )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB], SC: Monoid[SC]): Return[SC, SC, B] =
+    apply(toTuple.via(splitFlow(stateFlow, dataFlow)).map {
+      case (state, data) =>
+        StateT[F, SC, B](s => F.pure(SC.combine(s, state) -> data))
+    })
+
+  def stateVia[SC](
+    stateFlow: Flow[SB, SC, NotUsed]
+  )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB], SC: Monoid[SC]): Return[SC, SC, A] =
+    via(stateFlow, Flow[A])
+
+  def dataVia[B](
+    dataFlow: Flow[A, B, NotUsed]
+  )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB]): Return[SB, SB, B] =
+    via(Flow[SB], dataFlow)
 
   def to(
     stateSink: Sink[SB, NotUsed],
@@ -109,27 +126,47 @@ trait IndexedStateFlowSink[F[_], SA, SB, A] {
   def passThroughState(initial: SA)(dataSink: Sink[A, NotUsed])(implicit F: FlatMap[F]): Source[SB, NotUsed] =
     toTuple(initial).via(passThroughStateSink(dataSink))
 
-  def toMat[Mat2](stateSink: Sink[SB, NotUsed], dataSink: Sink[A, NotUsed])(
-    combine: (NotUsed, NotUsed) => Mat2
-  )(implicit F: FlatMap[F], SA: Monoid[SA], SB: Monoid[SB]): RunnableGraph[Mat2] =
-    toTuple.toMat(splitSink(stateSink, dataSink)(Keep.none))(combine)
+  def toMat[Mat1, Mat2, Mat3, Mat4](stateSink: Sink[SB, Mat1], dataSink: Sink[A, Mat2])(
+    combineSinks: (Mat1, Mat2) => Mat3,
+    combine: (NotUsed, Mat3) => Mat4
+  )(implicit F: FlatMap[F], SA: Monoid[SA], SB: Monoid[SB]): RunnableGraph[Mat4] =
+    toTuple.toMat[Mat3, Mat4](splitSink[Mat1, Mat2, Mat3](stateSink, dataSink)(combineSinks))(combine)
 
-  def toMat[Mat2, Mat3, Mat4, Mat5](stateSink: Sink[SB, Mat2], dataSink: Sink[A, Mat3])(
-    combineSinks: (Mat2, Mat3) => Mat4,
-    combine: (NotUsed, Mat4) => Mat5
-  )(implicit F: FlatMap[F], SA: Monoid[SA], SB: Monoid[SB]): RunnableGraph[Mat5] =
-    toTuple.toMat[Mat4, Mat5](splitSink[Mat2, Mat3, Mat4](stateSink, dataSink)(combineSinks))(combine)
+  def toMat[Mat1, Mat2](
+    stateSink: Sink[SB, Mat1],
+    dataSink: Sink[A, Mat2]
+  )(implicit F: FlatMap[F], SA: Monoid[SA], SB: Monoid[SB]): RunnableGraph[(Mat1, Mat2)] =
+    toMat[Mat1, Mat2, (Mat1, Mat2), (Mat1, Mat2)](stateSink, dataSink)(Keep.both, Keep.right)
 
-  def toMat[Mat2](initial: SA)(stateSink: Sink[SB, NotUsed], dataSink: Sink[A, NotUsed])(
-    combine: (NotUsed, NotUsed) => Mat2
-  )(implicit F: FlatMap[F]): RunnableGraph[Mat2] =
-    toTuple(initial).toMat(splitSink(stateSink, dataSink)(Keep.none))(combine)
+  def toMat[Mat1, Mat2, Mat3, Mat4](initial: SA)(
+    stateSink: Sink[SB, Mat1],
+    dataSink: Sink[A, Mat2]
+  )(combineSinks: (Mat1, Mat2) => Mat3, combine: (NotUsed, Mat3) => Mat4)(implicit F: FlatMap[F]): RunnableGraph[Mat4] =
+    toTuple(initial).toMat[Mat3, Mat4](splitSink[Mat1, Mat2, Mat3](stateSink, dataSink)(combineSinks))(combine)
 
-  def toMat[Mat2, Mat3, Mat4, Mat5](initial: SA)(
-    stateSink: Sink[SB, Mat2],
-    dataSink: Sink[A, Mat3]
-  )(combineSinks: (Mat2, Mat3) => Mat4, combine: (NotUsed, Mat4) => Mat5)(implicit F: FlatMap[F]): RunnableGraph[Mat5] =
-    toTuple(initial).toMat[Mat4, Mat5](splitSink[Mat2, Mat3, Mat4](stateSink, dataSink)(combineSinks))(combine)
+  def toMat[Mat1, Mat2](
+    initial: SA
+  )(stateSink: Sink[SB, Mat1], dataSink: Sink[A, Mat2])(implicit F: FlatMap[F]): RunnableGraph[(Mat1, Mat2)] =
+    toMat[Mat1, Mat2, (Mat1, Mat2), (Mat1, Mat2)](initial)(stateSink, dataSink)(Keep.both, Keep.right)
+
+  private def splitFlow[SC, B](
+    stateFlow: Flow[SB, SC, NotUsed],
+    dataFlow: Flow[A, B, NotUsed]
+  ): Flow[(SB, A), (SC, B), NotUsed] =
+    Flow.fromGraph(GraphDSL.create() { implicit builder =>
+      import GraphDSL.Implicits._
+
+      val unzip = builder.add(Unzip[SB, A])
+      val zip = builder.add(Zip[SC, B])
+      val fl = builder.add(Flow[(SB, A)])
+
+      fl.out ~> unzip.in
+
+      unzip.out0 ~> stateFlow ~> zip.in0
+      unzip.out1 ~> dataFlow ~> zip.in1
+
+      FlowShape.of(fl.in, zip.out)
+    })
 
   private def splitSink[Mat2, Mat3, Mat4](stateSink: Sink[SB, Mat2], dataSink: Sink[A, Mat3])(
     combine: (Mat2, Mat3) => Mat4
@@ -194,15 +231,15 @@ trait SeqInstances {
     override def foldRight[A, B](fa: Seq[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] = {
       def loop(as: Seq[A]): Eval[B] =
         as match {
-          case Nil => lb
-          case h :: t => f(h, Eval.defer(loop(t)))
+          case Seq() => lb
+          case h +: t => f(h, Eval.defer(loop(t)))
         }
       Eval.defer(loop(fa))
     }
   }
 }
 
-trait IndexedFlowStateGrouped[F[_], SA, SB, A] extends SeqInstances { self: IndexedStateFlowBase[F, SA, SB, A] =>
+trait IndexedFlowStateGrouped[F[_], SA, SB, A] extends SeqInstances { self: IndexedStateSourceBase[F, SA, SB, A] =>
 
   def groupedWithin(n: Int, d: FiniteDuration)(
     implicit F: Applicative[IndexedStateT[F, SA, SB, ?]]
@@ -213,7 +250,7 @@ trait IndexedFlowStateGrouped[F[_], SA, SB, A] extends SeqInstances { self: Inde
     apply(stream.grouped(n).map(seqTraverse.sequence(_)))
 }
 
-trait IndexedStateFlowAsync[F[_], SA, SB, A] { self: IndexedStateFlowBase[F, SA, SB, A] =>
+trait IndexedStateSourceAsync[F[_], SA, SB, A] { self: IndexedStateSourceBase[F, SA, SB, A] =>
   def mapAsync[C](parallelism: Int)(
     f: A => Future[C]
   )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB], FK: F ~> Future, ec: ExecutionContext): Return[SB, SB, C] =
@@ -221,7 +258,7 @@ trait IndexedStateFlowAsync[F[_], SA, SB, A] { self: IndexedStateFlowBase[F, SA,
 
   def flatMapAsync[SC, C](parallelism: Int)(
     f: A => IndexedStateT[Future, SB, SC, C]
-  )(implicit F: Monad[F], FK: F ~> Future, SA: Monoid[SA], SC: Monoid[SC], ec: ExecutionContext): Return[SC, SC, C] =
+  )(implicit F: Monad[F], nat: F ~> Future, SA: Monoid[SA], SC: Monoid[SC], ec: ExecutionContext): Return[SC, SC, C] =
     asyncTransform(parallelism)(_.flatMap(f))
 
   private def asyncTransform[SC, C](
@@ -267,6 +304,7 @@ trait IndexedFlowStateConcatOps {
   def all[F[_]: Applicative, S: Monoid, A]: ((S, immutable.Iterable[A])) => immutable.Iterable[StateT[F, S, A]] = {
     case (state, data) =>
       data match {
+        case immutable.Seq() => immutable.Seq.empty
         case d: immutable.Seq[A] => allSeq[F, S, A](state, d)
         case d => allSeq[F, S, A](state, d.toVector)
       }
@@ -276,25 +314,27 @@ trait IndexedFlowStateConcatOps {
     implicit S: Monoid[S]
   ): immutable.Seq[StateT[F, S, A]] =
     as match {
+      case immutable.Seq() => immutable.Seq.empty
       case head +: tail =>
-        StateT[F, S, A](s => (S.combine(state, s), head).pure) +: tail.map(a => StateT[F, S, A](s => (s, a).pure))
+        StateT[F, S, A](s => (S.combine(s, state), head).pure) +: tail.map(a => StateT[F, S, A](s => (s, a).pure))
     }
 
   def tailSeq[F[_]: Applicative, S, A](state: S, as: immutable.Seq[A])(
     implicit S: Monoid[S]
   ): immutable.Seq[StateT[F, S, A]] =
     as match {
+      case immutable.Seq() => immutable.Seq.empty
       case xs :+ last =>
-        xs.map(a => StateT[F, S, A](s => (s, a).pure)) :+ StateT[F, S, A](s => (S.combine(state, s), last).pure)
+        xs.map(a => StateT[F, S, A](s => (s, a).pure)) :+ StateT[F, S, A](s => (S.combine(s, state), last).pure)
     }
 
   def allSeq[F[_]: Applicative, S, A](state: S, as: immutable.Seq[A])(
     implicit S: Monoid[S]
-  ): immutable.Seq[StateT[F, S, A]] = as.map(a => StateT[F, S, A](s => (s, a).pure))
+  ): immutable.Seq[StateT[F, S, A]] = as.map(a => StateT[F, S, A](s => (S.combine(s, state), a).pure))
 }
 
 trait IndexedFlowStateConcatBase[F[_], SA, SB, A] extends IndexedFlowStateConcatOps {
-  self: IndexedStateFlowBase[F, SA, SB, A] =>
+  self: IndexedStateSourceBase[F, SA, SB, A] =>
 
   def mapConcat[C](
     f: A => immutable.Iterable[C],
@@ -338,13 +378,13 @@ trait IndexedFlowStateConcatBase[F[_], SA, SB, A] extends IndexedFlowStateConcat
 }
 
 trait IndexedFlowStateConcatComonad[F[_], SA, SB, A] extends IndexedFlowStateConcatBase[F, SA, SB, A] {
-  self: IndexedStateFlowBase[F, SA, SB, A] with WithComonad[F] =>
+  self: IndexedStateSourceBase[F, SA, SB, A] with WithComonad[F] =>
 
   override def mapConcat[C](
     f: A => immutable.Iterable[C],
     f2: ((SB, immutable.Iterable[C])) => immutable.Iterable[StateT[F, SB, C]]
   )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB]): Return[SB, SB, C] =
-    apply(stream.mapConcat(x => CM.extract(x.map(f).runEmpty.map[immutable.Iterable[StateT[F, SB, C]]](f2))))
+    apply(stream.mapConcat(x => CF.extract(x.map(f).runEmpty.map[immutable.Iterable[StateT[F, SB, C]]](f2))))
 
   override def safeMapConcat[C](
     f: A => immutable.Iterable[C],
@@ -353,7 +393,7 @@ trait IndexedFlowStateConcatComonad[F[_], SA, SB, A] extends IndexedFlowStateCon
     apply(
       stream.mapConcat(
         x =>
-          CM.extract(
+          CF.extract(
             x.map(b => makeSafe(f(b)))
               .runEmpty
               .map[immutable.Iterable[StateT[F, SB, Option[C]]]](f2)
@@ -362,15 +402,15 @@ trait IndexedFlowStateConcatComonad[F[_], SA, SB, A] extends IndexedFlowStateCon
     )
 }
 
-trait IndexedStateFlowConcatFunctorK[F[_], SA, SB, A] extends IndexedFlowStateConcatBase[F, SA, SB, A] {
-  self: IndexedStateFlowBase[F, SA, SB, A] with WithFunctorK[F] =>
+trait IndexedStateSourceConcatNat[F[_], SA, SB, A] extends IndexedFlowStateConcatBase[F, SA, SB, A] {
+  self: IndexedStateSourceBase[F, SA, SB, A] with WithNat[F] =>
 
   def mapConcat[C](
     f: A => immutable.Iterable[C],
     f2: ((SB, immutable.Iterable[C])) => immutable.Iterable[StateT[F, SB, C]]
   )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB]): Return[SB, SB, C] =
     apply(
-      stream.mapAsync(1)(x => FK(x.map(f).runEmpty.map[immutable.Iterable[StateT[F, SB, C]]](f2))).mapConcat(identity)
+      stream.mapAsync(1)(x => nat(x.map(f).runEmpty.map[immutable.Iterable[StateT[F, SB, C]]](f2))).mapConcat(identity)
     )
 
   def safeMapConcat[C](
@@ -379,62 +419,137 @@ trait IndexedStateFlowConcatFunctorK[F[_], SA, SB, A] extends IndexedFlowStateCo
   )(implicit F: Monad[F], SA: Monoid[SA], SB: Monoid[SB]): Return[SB, SB, Option[C]] =
     apply(
       stream
-        .mapAsync(1)(x => FK(x.map(b => makeSafe(f(b))).runEmpty.map[immutable.Iterable[StateT[F, SB, Option[C]]]](f2)))
+        .mapAsync(1)(
+          x => nat(x.map(b => makeSafe(f(b))).runEmpty.map[immutable.Iterable[StateT[F, SB, Option[C]]]](f2))
+        )
         .mapConcat(identity)
     )
 }
 
-case class IndexedStateFlowComonad[F[_], SA, SB, A](stream: Source[IndexedStateT[F, SA, SB, A], NotUsed])(
-  override implicit protected val CM: Comonad[F]
-) extends IndexedStateFlowBase[F, SA, SB, A]
-    with IndexedStateFlowAsync[F, SA, SB, A]
+case class IndexedStateSourceComonad[F[_], SA, SB, A](stream: Source[IndexedStateT[F, SA, SB, A], NotUsed])(
+  override implicit protected val CF: Comonad[F]
+) extends IndexedStateSourceBase[F, SA, SB, A]
+    with IndexedStateSourceAsync[F, SA, SB, A]
     with IndexedFlowStateConcatComonad[F, SA, SB, A]
     with IndexedFlowStateTupleComonad[F, SA, SB, A]
-    with IndexedStateFlowSink[F, SA, SB, A]
+    with IndexedStateSourceStreamOps[F, SA, SB, A]
+    with IndexedFlowStateGrouped[F, SA, SB, A]
     with WithComonad[F] {
 
-  override type Return[SC, SD, C] = IndexedStateFlowComonad[F, SC, SD, C]
+  override type Return[SC, SD, C] = IndexedStateSourceComonad[F, SC, SD, C]
 
   override protected def apply[SC, SD, C](
     src: Source[IndexedStateT[F, SC, SD, C], NotUsed]
-  ): IndexedStateFlowComonad[F, SC, SD, C] =
-    new IndexedStateFlowComonad[F, SC, SD, C](src)
+  ): IndexedStateSourceComonad[F, SC, SD, C] =
+    new IndexedStateSourceComonad[F, SC, SD, C](src)
 }
 
-case class IndexedStateFlowFunctorK[F[_], SA, SB, A](stream: Source[IndexedStateT[F, SA, SB, A], NotUsed])(
-  override implicit protected val FK: F ~> Future
-) extends IndexedStateFlowBase[F, SA, SB, A]
-    with IndexedStateFlowAsync[F, SA, SB, A]
-    with IndexedStateFlowConcatFunctorK[F, SA, SB, A]
-    with IndexedStateFlowTupleFunctorK[F, SA, SB, A]
-    with IndexedStateFlowSink[F, SA, SB, A]
-    with WithFunctorK[F] {
+object IndexedStateSourceComonad {
+  def apply[F[_], S, A](
+    src: Source[A, NotUsed]
+  )(implicit F: Applicative[F], CF: Comonad[F]): IndexedStateSourceComonad[F, S, S, A] =
+    new IndexedStateSourceComonad[F, S, S, A](src.map(a => StateT[F, S, A](s => F.pure(s -> a))))
 
-  override type Return[SC, SD, C] = IndexedStateFlowFunctorK[F, SC, SD, C]
+  def apply[F[_], S, A](
+    src: Source[(S, A), NotUsed]
+  )(implicit F: Applicative[F], CF: Comonad[F], S: Monoid[S]): IndexedStateSourceComonad[F, S, S, A] =
+    new IndexedStateSourceComonad[F, S, S, A](src.map {
+      case (state, a) => StateT[F, S, A](s => F.pure(S.combine(s, state) -> a))
+    })
+
+  implicit class IndexedStateSourceOps1[A](src: Source[A, NotUsed]) {
+    def toStateSource[F[_], S](implicit F: Applicative[F], CF: Comonad[F]): IndexedStateSourceComonad[F, S, S, A] =
+      IndexedStateSourceComonad[F, S, A](src)
+  }
+
+  implicit class IndexedStateSourceOps2[S, A](src: Source[(S, A), NotUsed])(implicit S: Monoid[S]) {
+    def toStateSource[F[_]](
+      implicit F: Applicative[F],
+      CF: Comonad[F],
+      S: Monoid[S]
+    ): IndexedStateSourceComonad[F, S, S, A] =
+      IndexedStateSourceComonad[F, S, A](src)
+  }
+
+  implicit class IndexedStateSourceOps3[F[_], SA, SB, A](src: Source[IndexedStateT[F, SA, SB, A], NotUsed]) {
+    def toStateSource(implicit CF: Comonad[F]): IndexedStateSourceComonad[F, SA, SB, A] =
+      new IndexedStateSourceComonad[F, SA, SB, A](src)
+  }
+}
+
+case class IndexedStateSourceNat[F[_], SA, SB, A](stream: Source[IndexedStateT[F, SA, SB, A], NotUsed])(
+  override implicit protected val nat: F ~> Future
+) extends IndexedStateSourceBase[F, SA, SB, A]
+    with IndexedStateSourceAsync[F, SA, SB, A]
+    with IndexedStateSourceConcatNat[F, SA, SB, A]
+    with IndexedStateSourceTupleNat[F, SA, SB, A]
+    with IndexedStateSourceStreamOps[F, SA, SB, A]
+    with IndexedFlowStateGrouped[F, SA, SB, A]
+    with WithNat[F] {
+
+  override type Return[SC, SD, C] = IndexedStateSourceNat[F, SC, SD, C]
 
   override protected def apply[SC, SD, C](
     src: Source[IndexedStateT[F, SC, SD, C], NotUsed]
-  ): IndexedStateFlowFunctorK[F, SC, SD, C] =
-    new IndexedStateFlowFunctorK[F, SC, SD, C](src)
+  ): IndexedStateSourceNat[F, SC, SD, C] =
+    new IndexedStateSourceNat[F, SC, SD, C](src)
 }
 
-object StateFlow {
-  implicit val evalToFuture: Eval ~> Future = new (Eval ~> Future) {
+object IndexedStateSourceNat {
+  def apply[F[_], S, A](
+    src: Source[A, NotUsed]
+  )(implicit F: Applicative[F], nat: F ~> Future): IndexedStateSourceNat[F, S, S, A] =
+    new IndexedStateSourceNat[F, S, S, A](src.map(a => StateT[F, S, A](s => F.pure(s -> a))))
+
+  def apply[F[_], S, A](
+    src: Source[(S, A), NotUsed]
+  )(implicit F: Applicative[F], S: Monoid[S], nat: F ~> Future): IndexedStateSourceNat[F, S, S, A] =
+    new IndexedStateSourceNat[F, S, S, A](src.map {
+      case (state, a) => StateT[F, S, A](s => F.pure(S.combine(s, state) -> a))
+    })
+
+  implicit class IndexedStateSourceOps1[A](src: Source[A, NotUsed]) {
+    def toStateSource[F[_], S](implicit F: Applicative[F], nat: F ~> Future): IndexedStateSourceNat[F, S, S, A] =
+      IndexedStateSourceNat[F, S, A](src)
+  }
+
+  implicit class IndexedStateSourceOps2[S, A](src: Source[(S, A), NotUsed])(implicit S: Monoid[S]) {
+    def toStateSource[F[_]](
+      implicit F: Applicative[F],
+      S: Monoid[S],
+      nat: F ~> Future
+    ): IndexedStateSourceNat[F, S, S, A] =
+      IndexedStateSourceNat[F, S, A](src)
+  }
+
+  implicit class IndexedStateSourceOps3[F[_], SA, SB, A](src: Source[IndexedStateT[F, SA, SB, A], NotUsed]) {
+    def toStateSource(implicit nat: F ~> Future): IndexedStateSourceNat[F, SA, SB, A] =
+      new IndexedStateSourceNat[F, SA, SB, A](src)
+  }
+}
+
+object StateSource {
+  implicit val evalToFutureNat: Eval ~> Future = new (Eval ~> Future) {
     override def apply[A](fa: Eval[A]): Future[A] = Future.successful(fa.value)
   }
 
-  def apply[S, A](underlying: Source[A, NotUsed]): StateFlow[S, A] =
-    new IndexedStateFlowComonad[Eval, S, S, A](underlying.map(b => State[S, A](s => (s, b))))
+  def apply[S, A](src: Source[A, NotUsed]): StateSource[S, A] =
+    new IndexedStateSourceComonad[Eval, S, S, A](src.map(a => State[S, A](s => (s, a))))
 
-  def apply[S, A](underlying: Source[(S, A), NotUsed])(implicit S: Monoid[S]): StateFlow[S, A] =
-    new IndexedStateFlowComonad[Eval, S, S, A](underlying.map {
-      case (state, b) => State[S, A](s => (S.combine(s, state), b))
+  def apply[S, A](src: Source[(S, A), NotUsed])(implicit S: Monoid[S]): StateSource[S, A] =
+    new IndexedStateSourceComonad[Eval, S, S, A](src.map {
+      case (state, a) => State[S, A](s => (S.combine(s, state), a))
     })
 
-//  import scala.concurrent.ExecutionContext.Implicits.global
-//
-//  implicit val strMon: Monoid[String] = ???
-//
-//  val x =
-//    apply[String, String, String](Flow[String]).map(???).flatMapAsync[String, String](1)(???).mapConcatTail[String](???)
+  implicit class StateSourceOps1[A](src: Source[A, NotUsed]) {
+    def toStateSource[S]: StateSource[S, A] = StateSource[S, A](src)
+  }
+
+  implicit class StateSourceOps2[S, A](src: Source[(S, A), NotUsed]) {
+    def toStateSource(implicit S: Monoid[S]): StateSource[S, A] = StateSource[S, A](src)
+  }
+
+  implicit class StateSourceOps3[S, A](src: Source[State[S, A], NotUsed]) {
+    def toStateSource: StateSource[S, A] = new IndexedStateSourceComonad[Eval, S, S, A](src)
+  }
 }
