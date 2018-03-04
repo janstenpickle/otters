@@ -4,29 +4,42 @@ import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
-import cats.data.{NonEmptyList, State, StateT}
-import org.scalatest.prop.PropertyChecks
-import org.scalatest.{BeforeAndAfterAll, FunSuite}
+import cats.{~>, Monad}
+import cats.data.{NonEmptyList, StateT}
 import cats.instances.all._
 import cats.kernel.Monoid
 import org.scalacheck.{Arbitrary, Gen}
+import org.scalatest.prop.PropertyChecks
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 
-class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAndAfterAll {
+trait IndexedStateSourceSuite[F[_]] extends FunSuite with PropertyChecks with BeforeAndAfterAll {
   import IndexedStateSourceSuite._
-  import StateSource.evalToFutureNat
 
   implicit val as: ActorSystem = ActorSystem()
   implicit val mat: ActorMaterializer = ActorMaterializer()
   implicit val ex: ExecutionContext = as.dispatcher
 
+  implicit def F: Monad[F]
+  implicit def nat: F ~> Future
+
+  def mkStateSource[S, A](src: Source[A, NotUsed]): IndexedStateSource[F, S, S, A]
+  def mkStateSource[S: Monoid, A](src: Source[(S, A), NotUsed]): IndexedStateSource[F, S, S, A]
+
+  def extract[A](fa: F[A]): A
+
+  def runConcat[S: Monoid, A, B](
+    source: Source[(S, A), NotUsed]
+  )(f: IndexedStateSource[F, S, S, A] => IndexedStateSource[F, S, S, B])(implicit mat: ActorMaterializer): Seq[(S, B)] =
+    runStream(f(mkStateSource[S, A](source)).stream).map(v => extract(v.runEmpty))
+
   test("can map over state") {
     forAll { (state: Int, value: String) =>
-      val ret = runStream(StateSource[Int, String](Source.single(value)).map(_.length).stream)
+      val ret = runStream(mkStateSource[Int, String](Source.single(value)).map(_.length).stream)
 
-      val (st, fin) = ret.head.run(state).value
+      val (st, fin) = extract(ret.head.run(state))
 
       assert(ret.size === 1 && st === state && fin === value.length)
     }
@@ -35,9 +48,9 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
   test("can mapAsync over state") {
     forAll { (state: Int, value: String) =>
       val ret =
-        runStream(StateSource[Int, String](Source.single(value)).mapAsync(parallelism)(v => Future(v.length)).stream)
+        runStream(mkStateSource[Int, String](Source.single(value)).mapAsync(parallelism)(v => Future(v.length)).stream)
 
-      val (st, fin) = ret.head.run(state).value
+      val (st, fin) = extract(ret.head.run(state))
 
       assert(ret.size === 1 && st === state && fin === value.length)
     }
@@ -46,9 +59,11 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
   test("can flatMap state") {
     forAll { (state: Int, value: String) =>
       val ret =
-        runStream(StateSource[Int, String](Source.single(value)).flatMap(v => State(s => (v.length + s, v))).stream)
+        runStream(
+          mkStateSource[Int, String](Source.single(value)).flatMap(v => StateT(s => F.pure((v.length + s, v)))).stream
+        )
 
-      val (st, fin) = ret.head.run(state).value
+      val (st, fin) = extract(ret.head.run(state))
 
       assert(ret.size === 1 && st === state + value.length && fin === value)
     }
@@ -57,12 +72,12 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
   test("can flatMapAsync state") {
     forAll { (state: Int, value: String) =>
       val ret = runStream(
-        StateSource[Int, String](Source.single(value))
+        mkStateSource[Int, String](Source.single(value))
           .flatMapAsync(parallelism)(v => StateT(s => Future(v.length + s, v)))
           .stream
       )
 
-      val (st, fin) = ret.head.run(state).value
+      val (st, fin) = extract(ret.head.run(state))
 
       assert(ret.size === 1 && st === state + value.length && fin === value)
     }
@@ -71,9 +86,9 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
   test("can modify state") {
     forAll { (state: Int, value: String) =>
       val ret =
-        runStream(StateSource[Int, String](Source.single(value)).modify(_.toString).stream)
+        runStream(mkStateSource[Int, String](Source.single(value)).modify(_.toString).stream)
 
-      val (st, fin) = ret.head.run(state).value
+      val (st, fin) = extract(ret.head.run(state))
 
       assert(ret.size === 1 && st === state.toString && fin === value)
     }
@@ -81,9 +96,9 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
 
   test("can concatenate collection, putting state ") {
     forAll { (state: Int, value: String) =>
-      val ret = runStream(StateSource[Int, String](Source.single(value)).transform(_.toString -> _.length).stream)
+      val ret = runStream(mkStateSource[Int, String](Source.single(value)).transform(_.toString -> _.length).stream)
 
-      val (st, fin) = ret.head.run(state).value
+      val (st, fin) = extract(ret.head.run(state))
 
       assert(ret.size === 1 && st === state.toString && fin === value.length)
     }
@@ -123,32 +138,33 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
 
   test("puts state on to the head of a stream when performing safeMapConcatHead") {
     forAll { (state: Int, values: NonEmptyList[String]) =>
-      val data = runConcat(Source.single(state -> values))(_.safeMapConcatHead(_.toList))
+      val data = runConcat(Source.single(state -> values))(_.safeMapConcatHead(_.toList.toSet))
       val (headState, _) = data.head
       val tailState = data.tail.map(_._1).sum
       val returnValues = data.map(_._2)
 
-      assert(headState === state && tailState === 0 && returnValues === values.map(Some(_)).toList)
+      assert(headState === state && tailState === 0 && returnValues.toSet === values.map(Some(_)).toList.toSet)
     }
   }
 
   test("puts state on to the end of a stream when performing safeMapConcatTail") {
     forAll { (state: Int, values: NonEmptyList[String]) =>
-      val data = runConcat(Source.single(state -> values))(_.safeMapConcatTail(_.toList))
+      val data = runConcat(Source.single(state -> values))(_.safeMapConcatTail(_.toList.toSet))
       val (endState, _) = data.last
       val (front :+ _) = data.map(_._1)
 
-      assert(endState === state && front.sum === 0 && data.map(_._2) === values.map(Some(_)).toList)
+      assert(endState === state && front.sum === 0 && data.map(_._2).toSet === values.map(Some(_)).toList.toSet)
     }
   }
 
   test("copies state to each element of a stream when performing safeMapConcatAll") {
     forAll { (state: Int, values: NonEmptyList[String]) =>
-      val data = runConcat(Source.single(state -> values))(_.safeMapConcatAll(_.toList))
+      val data = runConcat(Source.single(state -> values))(_.safeMapConcatAll(_.toList.toSet))
 
       assert(
-        data.map(_._1).sum === Stream.continually(state).take(values.size).sum && data
-          .map(_._2) === values.map(Some(_)).toList
+        data.map(_._1).sum === Stream.continually(state).take(values.toList.toSet.size).sum && data
+          .map(_._2)
+          .toSet === values.map(Some(_)).toList.toSet
       )
     }
   }
@@ -221,7 +237,7 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
 
   test("converts state and data to a tuple") {
     forAll { (state: Int, value: String) =>
-      val data = runStream(StateSource(Source.single(state -> value)).toTuple)
+      val data = runStream(mkStateSource(Source.single(state -> value)).toTuple)
 
       assert(data === Seq(state -> value))
     }
@@ -229,7 +245,7 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
 
   test("converts state and data to a tuple when provided initial state") {
     forAll { (state: Int, value: String) =>
-      val data = runStream(StateSource[Int, String](Source.single(value)).toTuple(state))
+      val data = runStream(mkStateSource[Int, String](Source.single(value)).toTuple(state))
 
       assert(data === Seq(state -> value))
     }
@@ -238,44 +254,150 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
   test("can send state and data by independent flows") {
     forAll { (state: Int, value: String) =>
       val data = runStream(
-        StateSource[Int, String](Source.single(state -> value))
+        mkStateSource[Int, String](Source.single(state -> value))
           .via(Flow.fromFunction(_.toString), Flow.fromFunction(_.length))
           .stream
       )
 
-      assert(data.map(_.runEmpty.value) === Seq(state.toString -> value.length))
+      assert(data.map(v => extract(v.runEmpty)) === Seq(state.toString -> value.length))
     }
   }
 
   test("can send state by separate flows") {
     forAll { (state: Int, value: String) =>
       val data = runStream(
-        StateSource[Int, String](Source.single(state -> value))
+        mkStateSource[Int, String](Source.single(state -> value))
           .stateVia(Flow.fromFunction(_.toString))
           .stream
       )
 
-      assert(data.map(_.runEmpty.value) === Seq(state.toString -> value))
+      assert(data.map(v => extract(v.runEmpty)) === Seq(state.toString -> value))
     }
   }
 
   test("can send data by separate flow") {
     forAll { (state: Int, value: String) =>
       val data = runStream(
-        StateSource[Int, String](Source.single(state -> value))
+        mkStateSource[Int, String](Source.single(state -> value))
           .dataVia(Flow.fromFunction(_.length))
           .stream
       )
 
-      assert(data.map(_.runEmpty.value) === Seq(state -> value.length))
+      assert(data.map(v => extract(v.runEmpty)) === Seq(state -> value.length))
     }
   }
 
-//  test("can send state and data to separate sinks") {
-//    forAll { (state: Int, value: String) =>
-//      val (s, d) = StateSource[Int, String](Source.single(state -> value)).to(Sink.seq, Sink.seq)
-//    }
-//  }
+  test("can send state and data to separate sinks") {
+    forAll { (state: Int, value: String) =>
+      val stateSink = new TestSink[Int]
+      val dataSink = new TestSink[String]
+
+      mkStateSource[Int, String](Source.single(state -> value)).to(stateSink.sink, dataSink.sink).run()
+
+      Thread.sleep(100)
+
+      assert(stateSink.data === Seq(state) && dataSink.data === Seq(value))
+    }
+  }
+
+  test("can send state and data to separate sinks when provided with an initial state") {
+    forAll { (state: Int, value: String) =>
+      val stateSink = new TestSink[Int]
+      val dataSink = new TestSink[String]
+
+      mkStateSource[Int, String](Source.single(value)).to(state)(stateSink.sink, dataSink.sink).run()
+
+      Thread.sleep(100)
+
+      assert(stateSink.data === Seq(state) && dataSink.data === Seq(value))
+    }
+  }
+
+  test("can materialize state and data with separate sinks") {
+    forAll { (state: Int, value: String) =>
+      val (stateRes, valueRes) = mkStateSource[Int, String](Source.single(state -> value))
+        .runWith[Future[Seq[Int]], Future[Seq[String]]](Sink.seq[Int], Sink.seq[String])
+
+      assert(waitFor(stateRes) === Seq(state) && waitFor(valueRes) === Seq(value))
+    }
+  }
+
+  test("can materialize state and data with separate sinks when provided with an initial state") {
+    forAll { (state: Int, value: String) =>
+      val (stateRes, valueRes) = mkStateSource[Int, String](Source.single(value))
+        .runWith[Future[Seq[Int]], Future[Seq[String]]](state)(Sink.seq[Int], Sink.seq[String])
+
+      assert(waitFor(stateRes) === Seq(state) && waitFor(valueRes) === Seq(value))
+    }
+  }
+
+  test("can materialize state and data with separate sinks, combining the results") {
+    forAll { (state: Int, value: String) =>
+      val (stateRes, valueRes) = waitFor(
+        mkStateSource[Int, String](Source.single(state -> value))
+          .runWith[Future[Seq[Int]], Future[Seq[String]], Future[(Seq[Int], Seq[String])]](
+            Sink.seq[Int],
+            Sink.seq[String]
+          )((l, r) => l.flatMap(ll => r.map((ll, _))))
+      )
+
+      assert(stateRes === Seq(state) && valueRes === Seq(value))
+    }
+  }
+
+  test("can materialize state and data with separate sinks and initial state, combining the results") {
+    forAll { (state: Int, value: String) =>
+      val (stateRes, valueRes) = waitFor(
+        mkStateSource[Int, String](Source.single(value))
+          .runWith[Future[Seq[Int]], Future[Seq[String]], Future[(Seq[Int], Seq[String])]](state)(
+            Sink.seq[Int],
+            Sink.seq[String]
+          )((l, r) => l.flatMap(ll => r.map((ll, _))))
+      )
+
+      assert(stateRes === Seq(state) && valueRes === Seq(value))
+    }
+  }
+
+  test("can send state to a sink returning a data stream") {
+    forAll { (state: Int, value: String) =>
+      val stateSink = new TestSink[Int]
+
+      val data = runStream(mkStateSource[Int, String](Source.single(state -> value)).passThroughData(stateSink.sink))
+
+      assert(stateSink.data === Seq(state) && data === Seq(value))
+    }
+  }
+
+  test("can send state to a sink returning a data stream with initial state") {
+    forAll { (state: Int, value: String) =>
+      val stateSink = new TestSink[Int]
+
+      val data = runStream(mkStateSource[Int, String](Source.single(value)).passThroughData(state)(stateSink.sink))
+
+      assert(stateSink.data === Seq(state) && data === Seq(value))
+    }
+  }
+
+  test("can send data to a sink returning a state stream") {
+    forAll { (state: Int, value: String) =>
+      val dataSink = new TestSink[String]
+
+      val data = runStream(mkStateSource[Int, String](Source.single(state -> value)).passThroughState(dataSink.sink))
+
+      assert(dataSink.data === Seq(value) && data === Seq(state))
+    }
+  }
+
+  test("can send data to a sink returning a state stream with initial state") {
+    forAll { (state: Int, value: String) =>
+      val dataSink = new TestSink[String]
+
+      val data = runStream(mkStateSource[Int, String](Source.single(value)).passThroughState(state)(dataSink.sink))
+
+      assert(dataSink.data === Seq(value) && data === Seq(state))
+    }
+  }
 
   override protected def afterAll(): Unit = {
     mat.shutdown()
@@ -285,6 +407,19 @@ class IndexedStateSourceSuite extends FunSuite with PropertyChecks with BeforeAn
 }
 
 object IndexedStateSourceSuite {
+  class TestSink[T] {
+    private val _data: scala.collection.mutable.ArrayBuffer[T] = scala.collection.mutable.ArrayBuffer.empty
+
+    def data: Seq[T] = Seq(_data: _*)
+
+    lazy val sink: Sink[T, NotUsed] = Flow[T]
+      .map { t =>
+        _data += t
+        t
+      }
+      .to(Sink.ignore)
+  }
+
   val parallelism: Int = 3
 
   implicit def nelArb[A](implicit arb: Arbitrary[A]): Arbitrary[NonEmptyList[A]] =
@@ -294,11 +429,6 @@ object IndexedStateSourceSuite {
     } yield NonEmptyList.of(head, tail: _*))
 
   def repeat[A](v: A)(n: Int): Stream[A] = Stream.continually(v).take(n)
-
-  def runConcat[S: Monoid, A, B](
-    source: Source[(S, A), NotUsed]
-  )(f: StateSource[S, A] => StateSource[S, B])(implicit mat: ActorMaterializer): Seq[(S, B)] =
-    runStream(f(StateSource[S, A](source)).stream).map(_.runEmpty.value)
 
   def runStream[A](stream: Source[A, NotUsed])(implicit mat: ActorMaterializer): Seq[A] =
     waitFor(stream.toMat(Sink.seq)(Keep.right).run())

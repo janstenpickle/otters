@@ -1,0 +1,5 @@
+language: scala
+cache:
+  directories:
+   - ~/.ivy2
+   - ~/.sbt
