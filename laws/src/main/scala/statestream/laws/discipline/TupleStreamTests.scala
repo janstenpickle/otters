@@ -35,6 +35,7 @@ trait TupleStreamTests[F[_], G[_], H[_]] extends StreamSinkTests[F, H, G] {
     EqGB: Eq[H[G[List[B]]]],
     EqFABC: Eq[F[(A, B, C)]],
     EqGAB: Eq[H[(G[List[A]], G[List[B]])]],
+    EqFSeqA: Eq[F[Seq[A]]],
     iso: Isomorphisms[F]
   ): RuleSet =
     new DefaultRuleSet(

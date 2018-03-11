@@ -25,6 +25,4 @@ trait TupleStream[F[_], G[_], H[_]] extends StreamSink[F, H] with AsyncStream[F,
   def leftVia[A, B, C](fab: F[(A, B)])(lPipe: Pipe[F, A, C]): F[(C, B)] = fanOutFanIn(fab)(lPipe, identity)
 
   def rightVia[A, B, C](fab: F[(A, B)])(rPipe: Pipe[F, B, C]): F[(A, C)] = fanOutFanIn(fab)(identity, rPipe)
-
-  def zip[A, B](fa: F[A])(fb: F[B]): F[(A, B)]
 }

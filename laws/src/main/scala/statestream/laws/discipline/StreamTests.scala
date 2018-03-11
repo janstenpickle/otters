@@ -28,6 +28,7 @@ trait StreamTests[F[_]] extends ApplicativeTests[F] {
     EqFB: Eq[F[B]],
     EqFC: Eq[F[C]],
     EqFABC: Eq[F[(A, B, C)]],
+    EqFSeqA: Eq[F[Seq[A]]],
     iso: Isomorphisms[F]
   ): RuleSet = {
     implicit def functorF: Functor[F] = laws.F
@@ -40,7 +41,10 @@ trait StreamTests[F[_]] extends ApplicativeTests[F] {
       "flatMap associativity" -> forAll(laws.flatMapAssociativity[A, B, C] _),
       "flatMap consistent apply" -> forAll(laws.flatMapConsistentApply[A, B] _),
       "mapConcat associativity" -> forAll(laws.mapConcatAssociativity[A, B, C] _),
-      "pipe covariant composition" -> forAll(laws.pipeCovariantComposition[A, B, C] _)
+      "pipe covariant composition" -> forAll(laws.pipeCovariantComposition[A, B, C] _),
+      "zip homomorphism" -> forAll(laws.zipHomomorphism[A, B] _),
+      "grouped homomorphism" -> forAll(laws.groupedHomomorphism[A] _),
+      "grouped within homomorphism" -> forAll(laws.groupedWithinHomomorphism[A] _)
     )
   }
 }

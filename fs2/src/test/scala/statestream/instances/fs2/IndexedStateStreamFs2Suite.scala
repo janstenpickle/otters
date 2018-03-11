@@ -5,9 +5,7 @@ import cats.Monad
 import cats.effect.{Effect, IO}
 import org.scalatest.BeforeAndAfterAll
 
-trait IndexedStateStreamFs2Suite[G[_]]
-    extends IndexedStateStreamSuite[Fs2Stream[IO, ?], G, IO, IO]
-    with BeforeAndAfterAll {
+trait IndexedStateStreamFs2Suite[G[_]] extends WriterStreamSuite[Fs2Stream[IO, ?], G, IO, IO] with BeforeAndAfterAll {
 
   override implicit def H: Monad[IO] = implicitly[Effect[IO]]
 

@@ -44,7 +44,7 @@ val commonSettings = Seq(
 lazy val root = (project in file("."))
   .settings(commonSettings)
   .settings(name := "stream-state", publishArtifact := false)
-  .aggregate(core, akka, fs2, monix)
+  .aggregate(core, akka, fs2, `monix-reactive`, `monix-tail`)
 
 lazy val core = (project in file("core"))
   .settings(commonSettings)
@@ -103,11 +103,26 @@ lazy val fs2 = (project in file("fs2"))
   )
   .dependsOn(core % "compile->compile;test->test", laws % "test->compile")
 
-lazy val monix = (project in file("monix"))
+lazy val `monix-reactive` = (project in file("monix-reactive"))
   .settings(commonSettings)
   .settings(
-    name := "stream-state-fs2",
-    libraryDependencies ++= Seq(Dependencies.monix, Dependencies.scalaCheck % Test, Dependencies.scalaTest % Test),
+    name := "stream-state-monix-reactive",
+    libraryDependencies ++= Seq(
+      Dependencies.monixReactive,
+      Dependencies.monixTail,
+      Dependencies.scalaCheck % Test,
+      Dependencies.scalaTest  % Test
+    ),
+    publishArtifact in Test := true,
+    coverageEnabled.in(Test, test) := true
+  )
+  .dependsOn(core % "compile->compile;test->test", laws % "test->compile")
+
+lazy val `monix-tail` = (project in file("monix-tail"))
+  .settings(commonSettings)
+  .settings(
+    name := "stream-state-monix-tail",
+    libraryDependencies ++= Seq(Dependencies.monixTail, Dependencies.scalaCheck % Test, Dependencies.scalaTest % Test),
     publishArtifact in Test := true,
     coverageEnabled.in(Test, test) := true
   )

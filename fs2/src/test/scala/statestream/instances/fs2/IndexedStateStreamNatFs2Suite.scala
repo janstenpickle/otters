@@ -11,15 +11,13 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 class IndexedStateStreamNatFs2Suite extends IndexedStateStreamFs2Suite[Future] with BeforeAndAfterAll {
-  override def mkStateStream[S, A](
+  override def mkWriterStream[S: Monoid, A](
     src: Fs2Stream[IO, A]
-  ): IndexedStateStream[Fs2Stream[IO, ?], Future, IO, IO, S, S, A] =
-    IndexedStateStreamNat[Fs2Stream[IO, ?], Future, IO, IO, S, A](src)
+  ): WriterStream[Fs2Stream[IO, ?], Future, IO, IO, S, A] =
+    WriterStreamNat[Fs2Stream[IO, ?], Future, IO, IO, S, A](src)
 
-  override def mkStateStream[S: Monoid, A](
-    src: Fs2Stream[IO, (S, A)]
-  ): IndexedStateStream[Fs2Stream[IO, ?], Future, IO, IO, S, S, A] =
-    IndexedStateStreamNat[Fs2Stream[IO, ?], Future, IO, IO, S, A](src)
+  override def mkWriterStream[S, A](src: Fs2Stream[IO, (S, A)]): WriterStream[Fs2Stream[IO, ?], Future, IO, IO, S, A] =
+    WriterStreamNat[Fs2Stream[IO, ?], Future, IO, IO, S, A](src)
 
   override implicit def G: Monad[Future] = cats.instances.future.catsStdInstancesForFuture
 

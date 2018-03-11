@@ -27,6 +27,8 @@ trait AkkaStreamInstances {
     new TupleStream[Src, Future, RunnableGraph] {
       override implicit def H: Functor[RunnableGraph] with Semigroupal[RunnableGraph] = ev
 
+      override def map[A, B](fa: Src[A])(f: A => B): Src[B] = fa.map(f)
+
       override def zip[A, B](fa: Src[A])(fb: Src[B]): Src[(A, B)] = joinSources(fa, fb)
 
       override def to[A, B](fa: Src[A])(sink: Sink[Src, RunnableGraph, A, B]): RunnableGraph[B] = sink(fa)

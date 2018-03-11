@@ -29,6 +29,7 @@ trait StreamSinkTests[F[_], G[_], H[_]] extends StreamTests[F] {
     EqFC: Eq[F[C]],
     EqGB: Eq[G[H[List[B]]]],
     EqFABC: Eq[F[(A, B, C)]],
+    EqFSeqA: Eq[F[Seq[A]]],
     iso: Isomorphisms[F]
   ): RuleSet =
     new DefaultRuleSet(

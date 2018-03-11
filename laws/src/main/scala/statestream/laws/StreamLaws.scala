@@ -6,6 +6,8 @@ import cats.syntax.functor._
 import statestream.{Pipe, Stream}
 import statestream.syntax.stream._
 
+import scala.concurrent.duration._
+
 trait StreamLaws[F[_]] extends ApplicativeLaws[F] {
   implicit override def F: Stream[F]
 
@@ -20,6 +22,15 @@ trait StreamLaws[F[_]] extends ApplicativeLaws[F] {
 
   def pipeCovariantComposition[A, B, C](fa: F[A], fab: Pipe[F, A, B], fbc: Pipe[F, B, C]): IsEq[F[C]] =
     fa.via(fab).via(fbc) <-> fa.via(fab.andThen(fbc))
+
+  def zipHomomorphism[A, B](abs: List[(A, B)]): IsEq[F[(A, B)]] =
+    F.fromSeq(abs.map(_._1)).zip(F.fromSeq(abs.map(_._2))) <-> F.fromSeq(abs)
+
+  def groupedHomomorphism[A](as: List[A]): IsEq[F[Seq[A]]] =
+    F.fromSeq(as).grouped(2) <-> F.fromSeq(as.grouped(2).map(_.toSeq).toSeq)
+
+  def groupedWithinHomomorphism[A](as: List[A]): IsEq[F[Seq[A]]] =
+    F.fromSeq(as).groupedWithin(2, 1.second) <-> F.fromSeq(as.grouped(2).map(_.toSeq).toSeq)
 
 }
 

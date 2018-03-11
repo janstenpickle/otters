@@ -14,4 +14,5 @@ import scala.concurrent.duration.FiniteDuration
   def fromIterator[A](iter: => Iterator[A]): F[A]
   def fromSeq[A](seq: Seq[A]): F[A]
   def via[A, B](fa: F[A])(pipe: Pipe[F, A, B]): F[B]
+  def zip[A, B](fa: F[A])(fb: F[B]): F[(A, B)]
 }

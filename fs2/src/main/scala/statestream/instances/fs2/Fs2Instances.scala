@@ -13,6 +13,8 @@ trait Fs2Instances {
     new TupleStream[Fs2Stream[F, ?], F, F] {
       override implicit def H: Functor[F] with Semigroupal[F] = F
 
+      override def map[A, B](fa: Fs2Stream[F, A])(f: A => B): Fs2Stream[F, B] = fa.map(f)
+
       override def via[A, B](fa: Fs2Stream[F, A])(pipe: Pipe[Fs2Stream[F, ?], A, B]): Fs2Stream[F, B] = pipe(fa)
 
       override def mapAsync[A, B](fa: Fs2Stream[F, A])(f: A => F[B]): Fs2Stream[F, B] =
