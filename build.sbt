@@ -1,5 +1,5 @@
 val commonSettings = Seq(
-  organization := "io.stream-state",
+  organization := "io.otters",
   scalaVersion := "2.12.4",
   addCompilerPlugin(("org.spire-math"  % "kind-projector" % "0.9.4").cross(CrossVersion.binary)),
   addCompilerPlugin(("org.scalamacros" % "paradise"       % "2.1.0").cross(CrossVersion.full)),
@@ -43,13 +43,13 @@ val commonSettings = Seq(
 
 lazy val root = (project in file("."))
   .settings(commonSettings)
-  .settings(name := "stream-state", publishArtifact := false)
-  .aggregate(core, akka, fs2, monix)
+  .settings(name := "otters", publishArtifact := false)
+  .aggregate(core, akka, fs2, `monix-reactive`, `monix-tail`)
 
 lazy val core = (project in file("core"))
   .settings(commonSettings)
   .settings(
-    name := "stream-state-core",
+    name := "otters-core",
     libraryDependencies ++= Seq(
       Dependencies.cats,
       Dependencies.simulacrum,
@@ -63,7 +63,7 @@ lazy val core = (project in file("core"))
 lazy val laws = (project in file("laws"))
   .settings(commonSettings)
   .settings(
-    name := "stream-state-laws",
+    name := "otters-laws",
     libraryDependencies ++= Seq(
       Dependencies.cats,
       Dependencies.catsLaws,
@@ -80,7 +80,7 @@ lazy val laws = (project in file("laws"))
 lazy val akka = (project in file("akka"))
   .settings(commonSettings)
   .settings(
-    name := "stream-state-akka",
+    name := "otters-akka",
     libraryDependencies ++= Seq(
       Dependencies.akkaStreams,
       Dependencies.discipline,
@@ -96,18 +96,33 @@ lazy val akka = (project in file("akka"))
 lazy val fs2 = (project in file("fs2"))
   .settings(commonSettings)
   .settings(
-    name := "stream-state-fs2",
+    name := "otters-fs2",
     libraryDependencies ++= Seq(Dependencies.fs2, Dependencies.scalaCheck % Test, Dependencies.scalaTest % Test),
     publishArtifact in Test := true,
     coverageEnabled.in(Test, test) := true
   )
   .dependsOn(core % "compile->compile;test->test", laws % "test->compile")
 
-lazy val monix = (project in file("monix"))
+lazy val `monix-reactive` = (project in file("monix-reactive"))
   .settings(commonSettings)
   .settings(
-    name := "stream-state-fs2",
-    libraryDependencies ++= Seq(Dependencies.monix, Dependencies.scalaCheck % Test, Dependencies.scalaTest % Test),
+    name := "otters-monix-reactive",
+    libraryDependencies ++= Seq(
+      Dependencies.monixReactive,
+      Dependencies.monixTail,
+      Dependencies.scalaCheck % Test,
+      Dependencies.scalaTest  % Test
+    ),
+    publishArtifact in Test := true,
+    coverageEnabled.in(Test, test) := true
+  )
+  .dependsOn(core % "compile->compile;test->test", laws % "test->compile")
+
+lazy val `monix-tail` = (project in file("monix-tail"))
+  .settings(commonSettings)
+  .settings(
+    name := "otters-monix-tail",
+    libraryDependencies ++= Seq(Dependencies.monixTail, Dependencies.scalaCheck % Test, Dependencies.scalaTest % Test),
     publishArtifact in Test := true,
     coverageEnabled.in(Test, test) := true
   )
