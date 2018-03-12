@@ -1,5 +1,0 @@
-package statestream.syntax.akkastream
-
-import statestream.syntax.WriterStreamNatOps
-
-trait AkkaStreamNatSyntax extends AkkaStreamSyntax with WriterStreamNatOps
