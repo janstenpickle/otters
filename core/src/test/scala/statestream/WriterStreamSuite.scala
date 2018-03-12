@@ -49,6 +49,50 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
     }
   }
 
+  test("can map state and data") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(
+        mkWriterStream[Int, String](F.fromSeq(values.toList)).mapBoth((i, s) => (i.toString, s.length)).stream
+      ).map(_.run)
+        .map(extract)
+
+      assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
+  test("can flatMap state and data") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(
+        mkWriterStream[Int, String](F.fromSeq(values.toList))
+          .flatMapBoth((i, s) => (i.toString -> s.length).pure[G])
+          .stream
+      ).map(_.run)
+        .map(extract)
+
+      assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
+  test("can swap state and data") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).swap.stream)
+        .map(_.run)
+        .map(extract)
+
+      assert(ret === values.map(x => (x._2, x._1)).toList)
+    }
+  }
+
+  test("can bimap state and data") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).bimap(_.toString, _.length).stream)
+        .map(_.run)
+        .map(extract)
+
+      assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
   test("can mapAsync over state") {
     forAll { values: NonEmptyList[(Int, String)] =>
       val ret =
@@ -97,16 +141,6 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
       val (st, fin) = extract(ret.head.run)
 
       assert(ret.size === 1 && st === state.toString && fin === value)
-    }
-  }
-
-  test("can concatenate collection, putting state ") {
-    forAll { (state: Int, value: String) =>
-      val ret = runStream(mkWriterStream[Int, String](F.pure(state -> value)).mapBoth(_.toString -> _.length).stream)
-
-      val (st, fin) = extract(ret.head.run)
-
-      assert(ret.size === 1 && st === state.toString && fin === value.length)
     }
   }
 
