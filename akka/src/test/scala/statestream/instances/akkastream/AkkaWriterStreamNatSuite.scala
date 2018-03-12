@@ -5,6 +5,7 @@ import cats.effect.{Effect, IO}
 import cats.kernel.Monoid
 import cats.{~>, Monad}
 import statestream.instances.akkastream.Src
+import statestream.syntax.akkastream.nat._
 
 import scala.concurrent.Future
 
@@ -18,9 +19,9 @@ class AkkaWriterStreamNatSuite extends AkkaWriterStreamSuite[IO] {
   override def extract[A](fa: IO[A]): A = fa.unsafeRunSync()
 
   override def mkWriterStream[S: Monoid, A](src: Src[A]): WriterStream[Src, IO, Future, RunnableGraph, S, A] =
-    WriterStreamNat(src)
+    src.toWriterStream[IO, S]
 
   override def mkWriterStream[S, A](src: Src[(S, A)]): WriterStream[Src, IO, Future, RunnableGraph, S, A] =
-    WriterStreamNat(src)
+    src.toWriterStream[IO]
 
 }

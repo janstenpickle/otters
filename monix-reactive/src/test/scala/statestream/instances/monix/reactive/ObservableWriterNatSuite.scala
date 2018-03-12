@@ -6,14 +6,15 @@ import cats.{~>, Monad}
 import monix.eval.Task
 import monix.reactive.Observable
 import org.scalatest.BeforeAndAfterAll
+import statestream.syntax.monix.reactive.nat._
 
 class ObservableWriterNatSuite extends ObservableWriterStreamSuite[IO] with BeforeAndAfterAll {
 
   override def mkWriterStream[S: Monoid, A](src: Observable[A]): WriterStream[Observable, IO, Task, Task, S, A] =
-    WriterStreamNat(src)
+    src.toWriterStream[IO, S]
 
   override def mkWriterStream[S, A](src: Observable[(S, A)]): WriterStream[Observable, IO, Task, Task, S, A] =
-    WriterStreamNat(src)
+    src.toWriterStream[IO]
 
   override def extract[A](fa: IO[A]): A = fa.unsafeRunSync()
 

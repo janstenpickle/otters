@@ -18,16 +18,24 @@ trait WriterStreamBase[F[_], G[_], S, T] {
 
   protected def apply[SC, A](run: F[WriterT[G, SC, A]]): Return[SC, A]
 
-  def map[C](f: T => C)(implicit F: Functor[F], G: Functor[G]): Return[S, C] = apply(stream.map(_.map(f)))
+  def map[A](f: T => A)(implicit F: Functor[F], G: Functor[G]): Return[S, A] = apply(stream.map(_.map(f)))
 
   def flatMapWriter[A](f: T => WriterT[G, S, A])(implicit F: Functor[F], G: FlatMap[G], S: Semigroup[S]): Return[S, A] =
     apply(stream.map(_.flatMap(f)))
 
-  def mapBoth[A, SC](f: (S, T) => (SC, A))(implicit F: Functor[F], G: Functor[G]): Return[SC, A] =
+  def mapBoth[SA, A](f: (S, T) => (SA, A))(implicit F: Functor[F], G: Functor[G]): Return[SA, A] =
     apply(stream.map(_.mapBoth(f)))
 
-  def mapWritten[SC](f: S => SC)(implicit F: Functor[F], G: Functor[G]): Return[SC, T] =
+  def flatMapBoth[A, SA](f: (S, T) => G[(SA, A)])(implicit F: Functor[F], G: FlatMap[G]): Return[SA, A] =
+    apply(stream.map(t => WriterT(t.run.flatMap(f.tupled))))
+
+  def mapWritten[SA](f: S => SA)(implicit F: Functor[F], G: Functor[G]): Return[SA, T] =
     apply(stream.map(_.mapWritten(f)))
+
+  def bimap[SA, A](f: S => SA, g: T => A)(implicit F: Functor[F], G: Functor[G]): Return[SA, A] =
+    apply(stream.map(_.bimap(f, g)))
+
+  def swap(implicit F: Functor[F], G: Functor[G]): Return[T, S] = apply(stream.map(_.swap))
 }
 
 trait WithComonad[G[_]] {

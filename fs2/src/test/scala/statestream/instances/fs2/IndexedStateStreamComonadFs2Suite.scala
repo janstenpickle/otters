@@ -5,6 +5,7 @@ import cats.effect.IO
 import cats.kernel.Monoid
 import cats.{~>, Bimonad, Eval, Monad}
 import org.scalatest.BeforeAndAfterAll
+import statestream.syntax.fs2.comonad._
 
 class IndexedStateStreamComonadFs2Suite extends IndexedStateStreamFs2Suite[Eval] with BeforeAndAfterAll {
 
@@ -14,10 +15,10 @@ class IndexedStateStreamComonadFs2Suite extends IndexedStateStreamFs2Suite[Eval]
   }
 
   override def mkWriterStream[S: Monoid, A](src: Fs2Stream[IO, A]): WriterStream[Fs2Stream[IO, ?], Eval, IO, IO, S, A] =
-    WriterStreamComonad[Fs2Stream[IO, ?], Eval, IO, IO, S, A](src)
+    src.toWriterStream[Eval, S]
 
   override def mkWriterStream[S, A](src: Fs2Stream[IO, (S, A)]): WriterStream[Fs2Stream[IO, ?], Eval, IO, IO, S, A] =
-    WriterStreamComonad[Fs2Stream[IO, ?], Eval, IO, IO, S, A](src)
+    src.toWriterStream[Eval]
 
   override def extract[A](fa: Eval[A]): A = fa.value
 

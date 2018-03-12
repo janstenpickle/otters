@@ -4,6 +4,7 @@ import cats.kernel.Monoid
 import cats.{~>, Monad}
 import monix.eval.Task
 import monix.tail.Iterant
+import statestream.syntax.monix.tail.nat._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.Duration
@@ -19,11 +20,11 @@ class IterantWriterStreamNatSuite extends IterantWriterStreamIterantSuite[Future
   override def mkWriterStream[S: Monoid, A](
     src: Iterant[Task, A]
   ): WriterStream[Iterant[Task, ?], Future, Task, Task, S, A] =
-    WriterStreamNat(src)
+    src.toWriterStream[Future, S]
 
   override def mkWriterStream[S, A](
     src: Iterant[Task, (S, A)]
-  ): WriterStream[Iterant[Task, ?], Future, Task, Task, S, A] = WriterStreamNat(src)
+  ): WriterStream[Iterant[Task, ?], Future, Task, Task, S, A] = src.toWriterStream[Future]
 
   override def extract[A](fa: Future[A]): A = Await.result(fa, Duration.Inf)
 }

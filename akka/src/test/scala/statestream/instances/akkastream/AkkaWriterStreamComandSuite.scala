@@ -5,6 +5,7 @@ import cats.kernel.Monoid
 import cats.{~>, Bimonad, Eval, Monad}
 import org.scalatest.BeforeAndAfterAll
 import statestream.instances.akkastream.Src
+import statestream.syntax.akkastream.comonad._
 
 import scala.concurrent.Future
 
@@ -18,9 +19,9 @@ class AkkaWriterStreamComandSuite extends AkkaWriterStreamSuite[Eval] with Befor
   override def extract[A](fa: Eval[A]): A = fa.value
 
   override def mkWriterStream[S: Monoid, A](src: Src[A]): WriterStream[Src, Eval, Future, RunnableGraph, S, A] =
-    WriterStreamComonad(src)
+    src.toWriterStream[Eval, S]
 
   override def mkWriterStream[S, A](src: Src[(S, A)]): WriterStream[Src, Eval, Future, RunnableGraph, S, A] =
-    WriterStreamComonad(src)
+    src.toWriterStream[Eval]
 
 }

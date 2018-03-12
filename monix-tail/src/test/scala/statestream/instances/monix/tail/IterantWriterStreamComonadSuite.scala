@@ -4,6 +4,7 @@ import cats.kernel.Monoid
 import cats.{~>, Bimonad, Eval, Monad}
 import monix.eval.Task
 import monix.tail.Iterant
+import statestream.syntax.monix.tail.comonad._
 
 class IterantWriterStreamComonadSuite extends IterantWriterStreamIterantSuite[Eval] {
 
@@ -15,11 +16,11 @@ class IterantWriterStreamComonadSuite extends IterantWriterStreamIterantSuite[Ev
   override def mkWriterStream[S: Monoid, A](
     src: Iterant[Task, A]
   ): WriterStream[Iterant[Task, ?], Eval, Task, Task, S, A] =
-    WriterStreamComonad(src)
+    src.toWriterStream[Eval, S]
 
   override def mkWriterStream[S, A](
     src: Iterant[Task, (S, A)]
-  ): WriterStream[Iterant[Task, ?], Eval, Task, Task, S, A] = WriterStreamComonad(src)
+  ): WriterStream[Iterant[Task, ?], Eval, Task, Task, S, A] = src.toWriterStream[Eval]
 
   override def extract[A](fa: Eval[A]): A = fa.value
 }

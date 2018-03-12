@@ -4,6 +4,7 @@ import cats.kernel.Monoid
 import cats.{~>, Bimonad, Eval, Monad}
 import monix.eval.Task
 import monix.reactive.Observable
+import statestream.syntax.monix.reactive.comonad._
 
 class ObservableWriterComonadSuite extends ObservableWriterStreamSuite[Eval] {
 
@@ -13,10 +14,10 @@ class ObservableWriterComonadSuite extends ObservableWriterStreamSuite[Eval] {
   }
 
   override def mkWriterStream[S: Monoid, A](src: Observable[A]): WriterStream[Observable, Eval, Task, Task, S, A] =
-    WriterStreamComonad(src)
+    src.toWriterStream[Eval, S]
 
   override def mkWriterStream[S, A](src: Observable[(S, A)]): WriterStream[Observable, Eval, Task, Task, S, A] =
-    WriterStreamComonad(src)
+    src.toWriterStream[Eval]
 
   override def extract[A](fa: Eval[A]): A = fa.value
 }
