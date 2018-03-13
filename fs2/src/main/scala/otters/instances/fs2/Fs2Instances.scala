@@ -1,16 +1,16 @@
 package otters.instances.fs2
 
-import cats.{Functor, Semigroupal}
-import cats.effect.Effect
 import _root_.fs2.{Stream => Fs2Stream}
-import otters.{Pipe, Sink, TupleStream}
+import cats.effect.Effect
+import cats.{Functor, Semigroupal}
+import otters.{EitherStream, Pipe, Sink}
 
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 
 trait Fs2Instances {
-  implicit def fs2instances[F[_]](implicit F: Effect[F]): TupleStream[Fs2Stream[F, ?], F, F] =
-    new TupleStream[Fs2Stream[F, ?], F, F] {
+  implicit def fs2instances[F[_]](implicit F: Effect[F]): EitherStream[Fs2Stream[F, ?], F, F] =
+    new EitherStream[Fs2Stream[F, ?], F, F] {
       override implicit def H: Functor[F] with Semigroupal[F] = F
 
       override def map[A, B](fa: Fs2Stream[F, A])(f: A => B): Fs2Stream[F, B] = fa.map(f)
@@ -45,5 +45,10 @@ trait Fs2Instances {
       override def fromSeq[A](seq: Seq[A]): Fs2Stream[F, A] = Fs2Stream.emits(seq)
 
       override def zip[A, B](fa: Fs2Stream[F, A])(fb: Fs2Stream[F, B]): Fs2Stream[F, (A, B)] = fa.zip(fb)
+
+      override def collect[A, B](fa: Fs2Stream[F, A])(pf: PartialFunction[A, B]): Fs2Stream[F, B] = fa.collect(pf)
+
+      override def tailRecM[A, B](a: A)(f: A => Fs2Stream[F, Either[A, B]]): Fs2Stream[F, B] =
+        Fs2Stream.syncInstance[F].tailRecM(a)(f)
     }
 }

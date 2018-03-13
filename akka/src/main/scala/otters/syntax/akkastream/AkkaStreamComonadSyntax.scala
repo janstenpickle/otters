@@ -1,5 +1,0 @@
-package otters.syntax.akkastream
-
-import otters.syntax.WriterStreamComonadOps
-
-trait AkkaStreamComonadSyntax extends AkkaStreamSyntax with WriterStreamComonadOps

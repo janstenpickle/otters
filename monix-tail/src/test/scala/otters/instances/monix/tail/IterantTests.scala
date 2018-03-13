@@ -10,16 +10,17 @@ import cats.effect.laws.util.{TestContext, TestInstances}
 import cats.instances.all._
 import cats.laws.discipline.arbitrary._
 import org.scalacheck.{Arbitrary, Gen}
+import otters.laws.discipline.{AsyncStreamTests, EitherStreamTests, TestBase}
+import otters.laws.{AsyncStreamLaws, EitherStreamLaws}
 import otters.{Pipe, Sink}
-import otters.laws.discipline.{AsyncStreamTests, TestBase, TupleStreamTests}
-import otters.laws.{AsyncStreamLaws, TupleStreamLaws}
 
 import scala.concurrent.Future
 
 class IterantTests extends TestBase with TestInstances {
   implicit val taskEffect: Effect[Task] = new CatsEffectForTask()(Scheduler(TestContext()))
 
-  implicit val streamLaws: TupleStreamLaws[Iterant[Task, ?], Task, Task] = TupleStreamLaws[Iterant[Task, ?], Task, Task]
+  implicit val streamLaws: EitherStreamLaws[Iterant[Task, ?], Task, Task] =
+    EitherStreamLaws[Iterant[Task, ?], Task, Task]
   implicit val asyncStreamLaws: AsyncStreamLaws[Iterant[Task, ?], Task] = AsyncStreamLaws[Iterant[Task, ?], Task]
 
   implicit def iterantArb[A](implicit ev: Arbitrary[List[A]]): Arbitrary[Iterant[Task, A]] =
@@ -53,7 +54,7 @@ class IterantTests extends TestBase with TestInstances {
 
   checkAllAsync(
     "Iterant[Task, Int]",
-    implicit ec => TupleStreamTests[Iterant[Task, ?], Task, Task].tupleStream[Int, Int, Int]
+    implicit ec => EitherStreamTests[Iterant[Task, ?], Task, Task].eitherStream[Int, Int, Int]
   )
   checkAllAsync("Iterant[Task, Int]", implicit ec => AsyncStreamTests[Iterant[Task, ?], Task].asyncStream[Int, Int])
 }

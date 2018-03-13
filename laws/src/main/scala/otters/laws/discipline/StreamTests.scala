@@ -9,10 +9,10 @@ import org.scalacheck.{Arbitrary, Cogen}
 import otters.Pipe
 import otters.laws.StreamLaws
 
-trait StreamTests[F[_]] extends ApplicativeTests[F] {
+trait StreamTests[F[_]] extends MonadTests[F] {
   def laws: StreamLaws[F]
 
-  def stream[A: Arbitrary, B: Arbitrary, C: Arbitrary](
+  def stream[A: Arbitrary: Eq, B: Arbitrary: Eq, C: Arbitrary: Eq](
     implicit
     ArbFA: Arbitrary[F[A]],
     ArbFB: Arbitrary[F[B]],
@@ -27,6 +27,7 @@ trait StreamTests[F[_]] extends ApplicativeTests[F] {
     EqFA: Eq[F[A]],
     EqFB: Eq[F[B]],
     EqFC: Eq[F[C]],
+    EqFInt: Eq[F[Int]],
     EqFABC: Eq[F[(A, B, C)]],
     EqFSeqA: Eq[F[Seq[A]]],
     iso: Isomorphisms[F]
@@ -37,9 +38,7 @@ trait StreamTests[F[_]] extends ApplicativeTests[F] {
 
     new DefaultRuleSet(
       name = "stream",
-      parent = Some(applicative[A, B, C]),
-      "flatMap associativity" -> forAll(laws.flatMapAssociativity[A, B, C] _),
-      "flatMap consistent apply" -> forAll(laws.flatMapConsistentApply[A, B] _),
+      parent = Some(monad[A, B, C]),
       "mapConcat associativity" -> forAll(laws.mapConcatAssociativity[A, B, C] _),
       "pipe covariant composition" -> forAll(laws.pipeCovariantComposition[A, B, C] _),
       "zip homomorphism" -> forAll(laws.zipHomomorphism[A, B] _),

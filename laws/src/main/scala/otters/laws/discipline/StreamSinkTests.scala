@@ -11,7 +11,7 @@ import otters.{Pipe, Sink}
 trait StreamSinkTests[F[_], G[_], H[_]] extends StreamTests[F] {
   def laws: StreamSinkLaws[F, G, H]
 
-  def streamSink[A: Arbitrary, B: Arbitrary, C: Arbitrary](
+  def streamSink[A: Arbitrary: Eq, B: Arbitrary: Eq, C: Arbitrary: Eq](
     implicit
     ArbFA: Arbitrary[F[A]],
     ArbFB: Arbitrary[F[B]],
@@ -27,6 +27,7 @@ trait StreamSinkTests[F[_], G[_], H[_]] extends StreamTests[F] {
     EqFA: Eq[F[A]],
     EqFB: Eq[F[B]],
     EqFC: Eq[F[C]],
+    EqFInt: Eq[F[Int]],
     EqGB: Eq[G[H[List[B]]]],
     EqFABC: Eq[F[(A, B, C)]],
     EqFSeqA: Eq[F[Seq[A]]],

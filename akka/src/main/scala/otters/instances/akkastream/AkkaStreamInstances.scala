@@ -4,7 +4,7 @@ import akka.NotUsed
 import akka.stream.scaladsl.{GraphDSL, Keep, RunnableGraph, Source, Zip}
 import akka.stream.{ClosedShape, SourceShape}
 import cats.{Functor, Semigroupal}
-import otters.{Pipe, Sink, TupleStream}
+import otters.{EitherStream, Pipe, Sink}
 
 import scala.collection.immutable
 import scala.concurrent.Future
@@ -23,8 +23,8 @@ trait AkkaStreamInstances {
 
   implicit def akkaInstances(
     implicit ev: Functor[RunnableGraph] with Semigroupal[RunnableGraph]
-  ): TupleStream[Src, Future, RunnableGraph] =
-    new TupleStream[Src, Future, RunnableGraph] {
+  ): EitherStream[Src, Future, RunnableGraph] =
+    new EitherStream[Src, Future, RunnableGraph] {
       override implicit def H: Functor[RunnableGraph] with Semigroupal[RunnableGraph] = ev
 
       override def map[A, B](fa: Src[A])(f: A => B): Src[B] = fa.map(f)
@@ -61,6 +61,13 @@ trait AkkaStreamInstances {
 
       override def ap[A, B](ff: Source[A => B, NotUsed])(fa: Source[A, NotUsed]): Source[B, NotUsed] =
         ff.flatMapConcat(f => fa.map(f))
+
+      override def collect[A, B](fa: Src[A])(pf: PartialFunction[A, B]): Src[B] = fa.collect(pf)
+
+      override def tailRecM[A, B](a: A)(f: A => Src[Either[A, B]]): Src[B] = flatMap(f(a)) {
+        case Left(a) => tailRecM(a)(f)
+        case Right(b) => pure(b)
+      }
 
       private def joinSources[A, B](aSrc: Src[A], bSrc: Src[B]): Src[(A, B)] =
         Source.fromGraph(GraphDSL.create() { implicit builder =>

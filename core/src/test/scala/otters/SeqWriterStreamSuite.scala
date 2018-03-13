@@ -1,20 +1,14 @@
 package otters
 
-import cats.{Id, Monad}
+import cats.Id
+import cats.data.WriterT
+import cats.kernel.Monoid
+import otters.syntax.writer._
 
-trait SeqWriterStreamSuite[G[_]] extends WriterStreamSuite[Seq, G, Id, Id] {
+class SeqWriterStreamSuite extends WriterStreamSuite[Seq, Id, Id] with SeqStreamBase {
+  override def mkWriterStream[S: Monoid, A](src: Seq[A]): WriterT[Seq, S, A] = src.toWriter
 
-  override implicit def F: TupleStream[Seq, Id, Id] = SeqInstance
+  override def mkWriterStream[S, A](src: Seq[A], initial: S): WriterT[Seq, S, A] = src.toWriter(initial)
 
-  override implicit def H: Monad[Id] = cats.catsInstancesForId
-
-  override def mkPipe[A, B](f: A => B): Pipe[Seq, A, B] = _.map(f)
-
-  override def mkSeqSink[A]: Sink[Seq, Id, A, Id[Seq[A]]] = identity
-
-  override def runStream[A](stream: Seq[A]): Seq[A] = stream
-
-  override def materialize[A](i: Id[A]): A = i
-
-  override def waitFor[A](fut: Id[A]): A = fut
+  override def mkWriterStream[S, A](src: Seq[(S, A)]): WriterT[Seq, S, A] = src.toWriter
 }

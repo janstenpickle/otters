@@ -13,16 +13,18 @@ trait TupleStream[F[_], G[_], H[_]] extends StreamSink[F, H] with AsyncStream[F,
     zip(l)(r)
   }
 
-  def toSinks[A, B, C, D, E](
-    fab: F[(A, B)]
-  )(lSink: Sink[F, H, A, C], rSink: Sink[F, H, B, D])(combine: (C, D) => E): H[E] = {
+  def toSinks[A, B, C, D, E](fab: F[(A, B)])(lSink: Sink[F, H, A, C], rSink: Sink[F, H, B, D])(
+    combine: (C, D) => E
+  ): H[E] = toSinks[A, B, C, D](fab)(lSink, rSink).map(combine.tupled)
+
+  def toSinks[A, B, C, D](fab: F[(A, B)])(lSink: Sink[F, H, A, C], rSink: Sink[F, H, B, D]): H[(C, D)] = {
     val l = lSink(map(fab)(_._1))
     val r = rSink(map(fab)(_._2))
 
-    H.product(l, r).map(combine.tupled)
+    H.product(l, r)
   }
 
-  def leftVia[A, B, C](fab: F[(A, B)])(lPipe: Pipe[F, A, C]): F[(C, B)] = fanOutFanIn(fab)(lPipe, identity)
+  def tupleLeftVia[A, B, C](fab: F[(A, B)])(lPipe: Pipe[F, A, C]): F[(C, B)] = fanOutFanIn(fab)(lPipe, identity)
 
-  def rightVia[A, B, C](fab: F[(A, B)])(rPipe: Pipe[F, B, C]): F[(A, C)] = fanOutFanIn(fab)(identity, rPipe)
+  def tupleRightVia[A, B, C](fab: F[(A, B)])(rPipe: Pipe[F, B, C]): F[(A, C)] = fanOutFanIn(fab)(identity, rPipe)
 }

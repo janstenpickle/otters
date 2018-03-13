@@ -11,7 +11,7 @@ import otters.{Pipe, Sink}
 trait TupleStreamTests[F[_], G[_], H[_]] extends StreamSinkTests[F, H, G] {
   def laws: TupleStreamLaws[F, G, H]
 
-  def tupleStream[A: Arbitrary, B: Arbitrary, C: Arbitrary](
+  def tupleStream[A: Arbitrary: Eq, B: Arbitrary: Eq, C: Arbitrary: Eq](
     implicit
     ArbFA: Arbitrary[F[A]],
     ArbFB: Arbitrary[F[B]],
@@ -31,6 +31,7 @@ trait TupleStreamTests[F[_], G[_], H[_]] extends StreamSinkTests[F, H, G] {
     EqFA: Eq[F[A]],
     EqFB: Eq[F[B]],
     EqFC: Eq[F[C]],
+    EqFInt: Eq[F[Int]],
     EqFAB: Eq[F[(A, B)]],
     EqGB: Eq[H[G[List[B]]]],
     EqFABC: Eq[F[(A, B, C)]],
@@ -42,8 +43,8 @@ trait TupleStreamTests[F[_], G[_], H[_]] extends StreamSinkTests[F, H, G] {
       name = "tuple stream",
       parent = Some(streamSink[A, B, C]),
       "fan out fan in identity" -> forAll(laws.fanOutFanInIdentity[A, B] _),
-      "left via identity" -> forAll(laws.leftViaIdentity[A, B] _),
-      "right via identity" -> forAll(laws.rightViaIdentity[A, B] _),
+      "left via identity" -> forAll(laws.tupleLeftViaIdentity[A, B] _),
+      "right via identity" -> forAll(laws.tupleRightViaIdentity[A, B] _),
       "to sinks associativity" -> forAll(laws.toSinksAssociativity[A, B] _)
     )
 }

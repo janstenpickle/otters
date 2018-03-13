@@ -12,13 +12,14 @@ import cats.laws.discipline.SemigroupalTests.Isomorphisms
 import cats.laws.discipline.arbitrary._
 import cats.laws.discipline.{FunctorTests, SemigroupalTests}
 import org.scalacheck.rng.Seed
-import org.scalacheck.{Arbitrary, Cogen, Gen}
+import org.scalacheck.{Arbitrary, Cogen, Gen, Prop}
 import org.scalatest.BeforeAndAfterAll
+import otters.laws.EitherStreamLaws
+import otters.laws.discipline.{EitherStreamTests, TestBase}
 import otters.{Pipe, Sink}
-import otters.laws.TupleStreamLaws
-import otters.laws.discipline.{TestBase, TupleStreamTests}
 
 import scala.annotation.tailrec
+import scala.collection.SortedMap
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, ExecutionException, Future}
 import scala.util.{Failure, Success}
@@ -28,8 +29,8 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
   implicit val mat: ActorMaterializer = ActorMaterializer()
   implicit val ec: ExecutionContext = as.dispatcher
 
-  implicit val streamLaws: TupleStreamLaws[Source[?, NotUsed], Future, RunnableGraph] =
-    TupleStreamLaws[Source[?, NotUsed], Future, RunnableGraph]
+  implicit val streamLaws: EitherStreamLaws[Source[?, NotUsed], Future, RunnableGraph] =
+    EitherStreamLaws[Source[?, NotUsed], Future, RunnableGraph]
 
   implicit def sourceArb[A](implicit ev: Arbitrary[List[A]]): Arbitrary[Source[A, NotUsed]] =
     Arbitrary(ev.arbitrary.map(li => Source.fromIterator(() => li.iterator)))
@@ -58,8 +59,7 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
     Arbitrary(ev.arbitrary.map(f => (s: Source[A, NotUsed]) => s.map(f)))
 
   implicit def sinkFnArb[A, B](
-    implicit ev: Arbitrary[A => B],
-    ec: TestContext
+    implicit ev: Arbitrary[A => B]
   ): Arbitrary[Sink[Source[?, NotUsed], RunnableGraph, A, Future[List[B]]]] =
     Arbitrary(
       ev.arbitrary
@@ -68,9 +68,7 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
         )
     )
 
-  implicit def sinkArb[A](
-    implicit ec: TestContext
-  ): Arbitrary[Sink[Source[?, NotUsed], RunnableGraph, A, Future[List[A]]]] =
+  implicit def sinkArb[A]: Arbitrary[Sink[Source[?, NotUsed], RunnableGraph, A, Future[List[A]]]] =
     Arbitrary(
       Gen.const((s: Source[A, NotUsed]) => s.toMat(ASink.seq)(Keep.right).mapMaterializedValue(_.map(_.toList)))
     )
@@ -126,7 +124,7 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
 
         val xx = combine(x.run())
         val yy = combine(y.run())
-        Thread.sleep(100)
+        Thread.sleep(100) // hack because akka streams uses a different execution context
 
         Eq[Future[(A, B, C)]].eqv(xx, yy)
       }
@@ -136,7 +134,7 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
 
   checkAllAsync(
     "Source[Int, NotUsed]",
-    implicit ec => TupleStreamTests[Source[?, NotUsed], Future, RunnableGraph].tupleStream[Int, Int, Int]
+    implicit ec => AkkaEitherStreamTest[Source[?, NotUsed], Future, RunnableGraph].akkaEitherStream[Int, Int, Int]
   )
 
   checkAllAsync(
@@ -154,4 +152,53 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
     waitFor(as.terminate())
     super.afterAll()
   }
+}
+
+trait AkkaEitherStreamTest[F[_], G[_], H[_]] extends EitherStreamTests[F, G, H] {
+  def akkaEitherStream[A: Arbitrary: Eq, B: Arbitrary: Eq, C: Arbitrary: Eq](
+    implicit
+    ArbFA: Arbitrary[F[A]],
+    ArbFB: Arbitrary[F[B]],
+    ArbFC: Arbitrary[F[C]],
+    ArbFAB: Arbitrary[F[(A, B)]],
+    ArbFEitherAB: Arbitrary[F[Either[A, B]]],
+    ArbFAtoB: Arbitrary[F[A => B]],
+    ArbFBtoC: Arbitrary[F[B => C]],
+    ArbPipeAToB: Arbitrary[Pipe[F, A, B]],
+    ArbPipeBToC: Arbitrary[Pipe[F, B, C]],
+    ArbSinkAToA: Arbitrary[Sink[F, H, A, G[List[A]]]],
+    ArbSinkBToB: Arbitrary[Sink[F, H, B, G[List[B]]]],
+    ArbSinkAToB: Arbitrary[Sink[F, H, A, G[List[B]]]],
+    ArbSinkABToAB: Arbitrary[Sink[F, H, (A, B), G[List[(A, B)]]]],
+    CogenA: Cogen[A],
+    CogenB: Cogen[B],
+    CogenC: Cogen[C],
+    EqFA: Eq[F[A]],
+    EqFB: Eq[F[B]],
+    EqFC: Eq[F[C]],
+    EqFInt: Eq[F[Int]],
+    EqFAB: Eq[F[(A, B)]],
+    EqFEitherAB: Eq[F[Either[A, B]]],
+    EqGA: Eq[H[G[List[A]]]],
+    EqGB: Eq[H[G[List[B]]]],
+    EqFABC: Eq[F[(A, B, C)]],
+    EqGAB: Eq[H[(G[List[A]], G[List[B]])]],
+    EqFSeqA: Eq[F[Seq[A]]],
+    iso: Isomorphisms[F]
+  ): RuleSet = {
+    val rs = eitherStream[A, B, C]
+
+    val all: SortedMap[String, Prop] = SortedMap(rs.props: _*) ++ rs.parents
+      .flatMap(_.all.properties)
+      .filterNot(_._1.contains("tailRecM stack safety"))
+
+    new DefaultRuleSet(name = "either stream", parent = None, all.toSeq: _*)
+  }
+}
+
+object AkkaEitherStreamTest {
+  def apply[F[_], G[_], H[_]](implicit ev: EitherStreamLaws[F, G, H]): AkkaEitherStreamTest[F, G, H] =
+    new AkkaEitherStreamTest[F, G, H] {
+      override def laws: EitherStreamLaws[F, G, H] = ev
+    }
 }
