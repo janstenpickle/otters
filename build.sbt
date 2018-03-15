@@ -45,7 +45,7 @@ val commonSettings = Seq(
 lazy val root = (project in file("."))
   .settings(commonSettings)
   .settings(name := "otters", publishArtifact := false)
-  .aggregate(core, akka, fs2, `monix-reactive`, `monix-tail`)
+  .aggregate(core, akka, fs2, laws, `monix-reactive`, `monix-tail`)
 
 lazy val core = (project in file("core"))
   .settings(commonSettings)
