@@ -1,49 +1,44 @@
 package otters
 
-import cats.data.{NonEmptyList, StateT, WriterT}
+import cats.data.{NonEmptyList, WriterT}
 import cats.instances.all._
 import cats.kernel.Monoid
+import cats.syntax.applicative._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import cats.syntax.applicative._
-import cats.{~>, Monad}
-import org.scalacheck.{Arbitrary, Gen}
-import org.scalatest.FunSuite
-import org.scalatest.prop.PropertyChecks
+import otters.syntax.writer._
 
 import scala.concurrent.duration._
 
-trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyChecks {
-  import WriterStreamSuite._
+trait WriterStreamSuite[F[_], G[_], H[_]] extends TestBase[F, G, H] {
+  def mkWriterStream[S: Monoid, A](src: F[A]): WriterT[F, S, A]
+  def mkWriterStream[S, A](src: F[A], initial: S): WriterT[F, S, A]
+  def mkWriterStream[S, A](src: F[(S, A)]): WriterT[F, S, A]
 
-  implicit def F: TupleStream[F, H, I]
-  implicit def G: Monad[G]
-  implicit def H: Monad[H]
-  implicit def nat: G ~> H
+  def runConcat[S: Monoid, A, B](source: F[(S, A)])(f: WriterT[F, S, A] => WriterT[F, S, B]): Seq[(S, B)] =
+    runStream(f(mkWriterStream[S, A](source)).run)
 
-  def mkWriterStream[S: Monoid, A](src: F[A]): WriterStream[F, G, H, I, S, A]
-  def mkWriterStream[S, A](src: F[(S, A)]): WriterStream[F, G, H, I, S, A]
-  def mkPipe[A, B](f: A => B): Pipe[F, A, B]
-  def mkSeqSink[A]: Sink[F, I, A, H[Seq[A]]]
+  test("can make a stream with empty state") {
+    forAll { values: NonEmptyList[String] =>
+      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).run)
 
-  def extract[A](fa: G[A]): A
+      assert(ret === values.map(0 -> _).toList)
+    }
+  }
 
-  def runConcat[S: Monoid, A, B](
-    source: F[(S, A)]
-  )(f: WriterStream[F, G, H, I, S, A] => WriterStream[F, G, H, I, S, B]): Seq[(S, B)] =
-    runStream(f(mkWriterStream[S, A](source)).stream).map(v => extract(v.run))
+  test("can make a stream with initial state") {
+    forAll { (state: Int, values: NonEmptyList[String]) =>
+      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList), state).run)
 
-  def runStream[A](stream: F[A]): Seq[A]
-
-  def materialize[A](i: I[A]): A
-
-  def waitFor[A](fut: H[A]): A
+      assert(ret === values.map(state -> _).toList)
+    }
+  }
 
   test("can map over state") {
     forAll { (state: Int, value: String) =>
-      val ret = runStream(mkWriterStream[Int, String](F.pure(state -> value)).map(_.length).stream)
+      val ret = runStream(mkWriterStream[Int, String](F.pure(state -> value)).map(_.length).run)
 
-      val (st, fin) = extract(ret.head.run)
+      val (st, fin) = ret.head
 
       assert(ret.size === 1 && st === state && fin === value.length)
     }
@@ -51,23 +46,56 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
 
   test("can map state and data") {
     forAll { values: NonEmptyList[(Int, String)] =>
-      val ret = runStream(
-        mkWriterStream[Int, String](F.fromSeq(values.toList)).mapBoth((i, s) => (i.toString, s.length)).stream
-      ).map(_.run)
-        .map(extract)
+      val ret =
+        runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).mapBoth((i, s) => (i.toString, s.length)).run)
 
       assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
     }
   }
 
-  test("can flatMap state and data") {
+  test("can mapAsync state and data with parallelism") {
     forAll { values: NonEmptyList[(Int, String)] =>
       val ret = runStream(
         mkWriterStream[Int, String](F.fromSeq(values.toList))
-          .flatMapBoth((i, s) => (i.toString -> s.length).pure[G])
-          .stream
-      ).map(_.run)
-        .map(extract)
+          .mapBothAsync(parallelism)((i, s) => (i.toString -> s.length).pure[G])
+          .run
+      )
+
+      assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
+  test("can mapAsync state and data") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(
+        mkWriterStream[Int, String](F.fromSeq(values.toList))
+          .mapBothAsync((i, s) => (i.toString -> s.length).pure[G])
+          .run
+      )
+
+      assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
+  test("can bimapAsync state and data with parallelism") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(
+        mkWriterStream[Int, String](F.fromSeq(values.toList))
+          .bimapAsync(parallelism)(_.toString.pure[G], _.length.pure[G])
+          .run
+      )
+
+      assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
+  test("can bimapAsync state and data") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(
+        mkWriterStream[Int, String](F.fromSeq(values.toList))
+          .bimapAsync(_.toString.pure[G], _.length.pure[G])
+          .run
+      )
 
       assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
     }
@@ -75,9 +103,7 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
 
   test("can swap state and data") {
     forAll { values: NonEmptyList[(Int, String)] =>
-      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).swap.stream)
-        .map(_.run)
-        .map(extract)
+      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).swap.run)
 
       assert(ret === values.map(x => (x._2, x._1)).toList)
     }
@@ -85,60 +111,66 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
 
   test("can bimap state and data") {
     forAll { values: NonEmptyList[(Int, String)] =>
-      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).bimap(_.toString, _.length).stream)
-        .map(_.run)
-        .map(extract)
+      val ret = runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).bimap(_.toString, _.length).run)
 
       assert(ret.map(_._1) === values.map(_._1.toString).toList && ret.map(_._2) === values.map(_._2.length).toList)
+    }
+  }
+
+  test("can mapAsync over state with parallelism") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret =
+        runStream(
+          mkWriterStream[Int, String](F.fromSeq(values.toList)).mapAsync(parallelism)(v => G.pure(v.length)).run
+        )
+
+      assert(ret.size === values.size && ret.toList === values.map {
+        case (s, v) => (s, v.length)
+      }.toList)
     }
   }
 
   test("can mapAsync over state") {
     forAll { values: NonEmptyList[(Int, String)] =>
       val ret =
-        runStream(
-          mkWriterStream[Int, String](F.fromSeq(values.toList)).mapAsync(parallelism)(v => H.pure(v.length)).stream
-        )
+        runStream(mkWriterStream[Int, String](F.fromSeq(values.toList)).mapAsync(v => G.pure(v.length)).run)
 
-      assert(ret.size === values.size && ret.map(_.run).map(extract).toList === values.map {
+      assert(ret.size === values.size && ret.toList === values.map {
         case (s, v) => (s, v.length)
       }.toList)
     }
   }
 
-  test("can flatMap state") {
-    forAll { (state: Int, value: String) =>
-      val ret =
-        runStream(
-          mkWriterStream[Int, String](F.pure(state -> value)).flatMapWriter(v => WriterT((v.length, v).pure[G])).stream
-        )
+  test("can flatMapAsync writer with parallelism") {
+    forAll { values: NonEmptyList[(Int, String)] =>
+      val ret = runStream(
+        mkWriterStream[Int, String](F.fromSeq(values.toList))
+          .flatMapAsync(parallelism)(v => WriterT(G.pure(v.length -> v)))
+          .run
+      )
 
-      val (st, fin) = extract(ret.head.run)
-
-      assert(ret.size === 1 && st === state + value.length && fin === value)
+      assert(ret === values.map { case (i, s) => (i + s.length, s) }.toList)
     }
   }
 
-  test("can flatMapAsync state") {
-    forAll { (state: Int, value: String) =>
+  test("can flatMapAsync writer") {
+    forAll { values: NonEmptyList[(Int, String)] =>
       val ret = runStream(
-        mkWriterStream[Int, String](F.pure(state -> value))
-          .flatMapWriterAsync(parallelism)(v => WriterT(H.pure(v.length -> v)))
-          .stream
+        mkWriterStream[Int, String](F.fromSeq(values.toList))
+          .flatMapAsync(v => WriterT(G.pure(v.length -> v)))
+          .run
       )
 
-      val (st, fin) = extract(ret.head.run)
-
-      assert(ret.size === 1 && st === state + value.length && fin === value)
+      assert(ret === values.map { case (i, s) => (i + s.length, s) }.toList)
     }
   }
 
   test("can modify state") {
     forAll { (state: Int, value: String) =>
       val ret =
-        runStream(mkWriterStream[Int, String](F.pure(state -> value)).mapWritten(_.toString).stream)
+        runStream(mkWriterStream[Int, String](F.pure(state -> value)).mapWritten(_.toString).run)
 
-      val (st, fin) = extract(ret.head.run)
+      val (st, fin) = ret.head
 
       assert(ret.size === 1 && st === state.toString && fin === value)
     }
@@ -260,7 +292,7 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
   test("groups data and aggregates state") {
     forAll { (state: Int, value: String) =>
       val data =
-        runConcat(F.fromSeq(repeat(state -> value)(20)))(_.group(10))
+        runConcat(F.fromSeq(repeat(state -> value)(20)))(_.grouped(10))
 
       assert(data.map(_._1) === repeat(state * 10)(2) && data.map(_._2) === repeat(repeat(value)(10))(2))
     }
@@ -277,7 +309,7 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
 
   test("converts state and data to a tuple") {
     forAll { (state: Int, value: String) =>
-      val data = runStream(mkWriterStream[Int, String](F.pure(state -> value)).toTuple)
+      val data = runStream(mkWriterStream[Int, String](F.pure(state -> value)).run)
 
       assert(data === Seq(state -> value))
     }
@@ -288,10 +320,10 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
       val data = runStream(
         mkWriterStream[Int, String](F.fromSeq(values.toList))
           .via(mkPipe(_.toString), mkPipe(_.length))
-          .stream
+          .run
       )
 
-      assert(data.map(v => extract(v.run)) === values.map { case (s, d) => s.toString -> d.length }.toList)
+      assert(data === values.map { case (s, d) => s.toString -> d.length }.toList)
     }
   }
 
@@ -300,10 +332,10 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
       val data = runStream(
         mkWriterStream[Int, String](F.fromSeq(values.toList))
           .stateVia(mkPipe(_.toString))
-          .stream
+          .run
       )
 
-      assert(data.map(v => extract(v.run)) === values.map { case (s, d) => s.toString -> d }.toList)
+      assert(data === values.map { case (s, d) => s.toString -> d }.toList)
     }
   }
 
@@ -312,10 +344,10 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
       val data = runStream(
         mkWriterStream[Int, String](F.fromSeq(values.toList))
           .dataVia(mkPipe(_.length))
-          .stream
+          .run
       )
 
-      assert(data.map(v => extract(v.run)) === values.map { case (s, d) => s -> d.length }.toList)
+      assert(data === values.map { case (s, d) => s -> d.length }.toList)
     }
   }
 
@@ -323,7 +355,7 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
     forAll { values: NonEmptyList[(Int, String)] =>
       val (state, data) = materialize(
         mkWriterStream[Int, String](F.fromSeq(values.toList))
-          .toSinks(mkSeqSink, mkSeqSink)
+          .toSinksTupled(mkSeqSink, mkSeqSink)
       )
 
       assert(waitFor(state) === values.map(_._1).toList && waitFor(data) === values.map(_._2).toList)
@@ -335,27 +367,12 @@ trait WriterStreamSuite[F[_], G[_], H[_], I[_]] extends FunSuite with PropertyCh
       val (stateRes, valueRes) = waitFor(
         materialize(
           mkWriterStream[Int, String](F.fromSeq(values.toList))
-            .toSinks[H[Seq[Int]], H[Seq[String]], H[(Seq[Int], Seq[String])]](mkSeqSink[Int], mkSeqSink[String])(
-              (l, r) => l.flatMap(ll => r.map((ll, _)))
-            )
+            .toSinks(mkSeqSink[Int], mkSeqSink[String])((l, r) => l.flatMap(ll => r.map((ll, _))))
         )
       )
 
       assert(stateRes === values.map(_._1).toList && valueRes === values.map(_._2).toList)
     }
   }
-
-}
-
-object WriterStreamSuite {
-  val parallelism: Int = 3
-
-  implicit def nelArb[A](implicit arb: Arbitrary[A]): Arbitrary[NonEmptyList[A]] =
-    Arbitrary(for {
-      head <- arb.arbitrary
-      tail <- Gen.listOf(arb.arbitrary)
-    } yield NonEmptyList.of(head, tail: _*))
-
-  def repeat[A](v: A)(n: Int): List[A] = scala.Stream.continually(v).take(n).toList
 
 }

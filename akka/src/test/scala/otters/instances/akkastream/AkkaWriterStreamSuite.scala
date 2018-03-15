@@ -1,39 +1,18 @@
 package otters
 
-import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Keep, RunnableGraph, Sink => ASink}
-import cats.Monad
-import org.scalatest.BeforeAndAfterAll
-import otters.instances.akkastream.{runnableGraphSemigroupalFunctor, Src}
+import akka.stream.scaladsl.RunnableGraph
+import cats.data.WriterT
+import cats.kernel.Monoid
+import otters.instances.akkastream.Src
+import otters.syntax.writer._
 
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.Future
 
-trait AkkaWriterStreamSuite[G[_]] extends WriterStreamSuite[Src, G, Future, RunnableGraph] with BeforeAndAfterAll {
-  implicit val as: ActorSystem = ActorSystem()
-  implicit val mat: ActorMaterializer = ActorMaterializer()
-  implicit val ex: ExecutionContext = as.dispatcher
+class AkkaWriterStreamSuite extends AkkaBaseSuite with WriterStreamSuite[Src, Future, RunnableGraph] {
 
-  override implicit def F: TupleStream[Src, Future, RunnableGraph] =
-    otters.instances.akkastream.akkaInstances
+  override def mkWriterStream[S: Monoid, A](src: Src[A]): WriterT[Src, S, A] = src.toWriter
 
-  override implicit def H: Monad[Future] = cats.instances.future.catsStdInstancesForFuture
+  override def mkWriterStream[S, A](src: Src[A], initial: S): WriterT[Src, S, A] = src.toWriter(initial)
 
-  override def runStream[A](stream: Src[A]): Seq[A] =
-    waitFor(mkSeqSink(stream).run())
-
-  override def mkPipe[A, B](f: A => B): Pipe[Src, A, B] = _.map(f)
-
-  override def materialize[A](i: RunnableGraph[A]): A = i.run()
-
-  override def mkSeqSink[A]: Sink[Src, RunnableGraph, A, Future[Seq[A]]] = _.toMat(ASink.seq)(Keep.right)
-
-  override def waitFor[A](fut: Future[A]): A = Await.result(fut, Duration.Inf)
-
-  override protected def afterAll(): Unit = {
-    mat.shutdown()
-    waitFor(as.terminate())
-    super.afterAll()
-  }
+  override def mkWriterStream[S, A](src: Src[(S, A)]): WriterT[Src, S, A] = src.toWriter
 }

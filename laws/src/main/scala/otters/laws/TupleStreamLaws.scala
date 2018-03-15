@@ -14,11 +14,11 @@ trait TupleStreamLaws[F[_], G[_], H[_]] extends StreamSinkLaws[F, H, G] {
   def fanOutFanInIdentity[A, B](fab: F[(A, B)]): IsEq[F[(A, B)]] =
     F.fanOutFanIn(fab)(identity, identity) <-> fab
 
-  def leftViaIdentity[A, B](fab: F[(A, B)]): IsEq[F[(A, B)]] =
-    F.leftVia(fab)(identity) <-> fab
+  def tupleLeftViaIdentity[A, B](fab: F[(A, B)]): IsEq[F[(A, B)]] =
+    F.tupleLeftVia(fab)(identity) <-> fab
 
-  def rightViaIdentity[A, B](fab: F[(A, B)]): IsEq[F[(A, B)]] =
-    F.rightVia(fab)(identity) <-> fab
+  def tupleRightViaIdentity[A, B](fab: F[(A, B)]): IsEq[F[(A, B)]] =
+    F.tupleRightVia(fab)(identity) <-> fab
 
   def toSinksAssociativity[A, B](
     fab: F[(A, B)],
@@ -26,7 +26,8 @@ trait TupleStreamLaws[F[_], G[_], H[_]] extends StreamSinkLaws[F, H, G] {
     sa: Sink[F, H, A, G[List[A]]],
     sb: Sink[F, H, B, G[List[B]]]
   ): IsEq[H[(G[List[A]], G[List[B]])]] =
-    F.to(fab)(sab).map(g => (g.map(_.map(_._1)), g.map(_.map(_._2)))) <-> F.toSinks(fab)(sa, sb)(_ -> _)
+    F.to(fab)(sab).map(g => (g.map(_.map(_._1)), g.map(_.map(_._2)))) <-> F
+      .toSinks[A, B, G[List[A]], G[List[B]]](fab)(sa, sb)
 }
 
 object TupleStreamLaws {

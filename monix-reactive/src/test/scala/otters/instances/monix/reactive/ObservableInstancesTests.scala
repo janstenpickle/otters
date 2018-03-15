@@ -8,14 +8,14 @@ import cats.effect.laws.util.{TestContext, TestInstances}
 import cats.instances.all._
 import cats.laws.discipline.arbitrary._
 import org.scalacheck.{Arbitrary, Gen}
-import otters.laws.discipline.{AsyncStreamTests, TestBase, TupleStreamTests}
-import otters.laws.{AsyncStreamLaws, TupleStreamLaws}
+import otters.laws.discipline.{AsyncStreamTests, EitherStreamTests, TestBase}
+import otters.laws.{AsyncStreamLaws, EitherStreamLaws}
 import otters.{Pipe, Sink}
 
 import scala.concurrent.Future
 
 class ObservableInstancesTests extends TestBase with TestInstances {
-  implicit val streamLaws: TupleStreamLaws[Observable, Task, Task] = TupleStreamLaws[Observable, Task, Task]
+  implicit val streamLaws: EitherStreamLaws[Observable, Task, Task] = EitherStreamLaws[Observable, Task, Task]
   implicit val asyncStreamLaws: AsyncStreamLaws[Observable, Task] = AsyncStreamLaws[Observable, Task]
 
   implicit def observableArb[A](implicit ev: Arbitrary[List[A]]): Arbitrary[Observable[A]] =
@@ -63,6 +63,6 @@ class ObservableInstancesTests extends TestBase with TestInstances {
 
   implicit def pureTask[A]: Arbitrary[A => Task[A]] = Arbitrary(Gen.const(Task.now[A]))
 
-  checkAllAsync("Observable[Int]", implicit ec => TupleStreamTests[Observable, Task, Task].tupleStream[Int, Int, Int])
+  checkAllAsync("Observable[Int]", implicit ec => EitherStreamTests[Observable, Task, Task].eitherStream[Int, Int, Int])
   checkAllAsync("Observable[Int]", implicit ec => AsyncStreamTests[Observable, Task].asyncStream[Int, Int])
 }

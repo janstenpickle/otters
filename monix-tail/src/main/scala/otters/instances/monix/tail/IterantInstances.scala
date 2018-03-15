@@ -3,14 +3,14 @@ package otters.instances.monix.tail
 import cats.effect.Effect
 import cats.{Functor, Semigroupal}
 import monix.tail.Iterant
-import otters.{Pipe, Sink, TupleStream}
+import otters.{EitherStream, Pipe, Sink, TupleStream}
 
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 
 trait IterantInstances {
-  implicit def iterantInstances[F[_]](implicit ev: Effect[F]): TupleStream[Iterant[F, ?], F, F] =
-    new TupleStream[Iterant[F, ?], F, F] {
+  implicit def iterantInstances[F[_]](implicit ev: Effect[F]): EitherStream[Iterant[F, ?], F, F] =
+    new EitherStream[Iterant[F, ?], F, F] {
       override implicit def H: Functor[F] with Semigroupal[F] = ev
 
       override def map[A, B](fa: Iterant[F, A])(f: A => B): Iterant[F, B] = fa.map(f)
@@ -42,5 +42,9 @@ trait IterantInstances {
       override def pure[A](x: A): Iterant[F, A] = Iterant.pure(x)
 
       override def ap[A, B](ff: Iterant[F, A => B])(fa: Iterant[F, A]): Iterant[F, B] = ff.flatMap(f => fa.map(f))
+
+      override def collect[A, B](fa: Iterant[F, A])(pf: PartialFunction[A, B]): Iterant[F, B] = fa.collect(pf)
+
+      override def tailRecM[A, B](a: A)(f: A => Iterant[F, Either[A, B]]): Iterant[F, B] = Iterant.tailRecM(a)(f)
     }
 }

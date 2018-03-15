@@ -1,14 +1,8 @@
 package otters.instances
 
 import akka.NotUsed
-import akka.stream.scaladsl.{RunnableGraph, Source}
-import cats.Id
-import otters.WriterStream
-
-import scala.concurrent.Future
+import akka.stream.scaladsl.Source
 
 package object akkastream extends AkkaStreamInstances {
   type Src[A] = Source[A, NotUsed]
-  type AkkaWriterStream[S, A] = WriterStream[Src, Id, Future, RunnableGraph, S, A]
-  type AkkaWriterStreamT[F[_], S, A] = WriterStream[Src, F, Future, RunnableGraph, S, A]
 }

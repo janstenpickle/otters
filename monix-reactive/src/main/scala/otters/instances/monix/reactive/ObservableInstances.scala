@@ -3,14 +3,14 @@ package otters.instances.monix.reactive
 import _root_.monix.eval.Task
 import _root_.monix.reactive.Observable
 import cats.{Apply, Functor, Semigroupal}
-import otters.{Pipe, Sink, TupleStream}
+import otters.{EitherStream, Pipe, Sink}
 
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 
 trait ObservableInstances {
-  implicit def observableInstances(implicit ev: Apply[Task]): TupleStream[Observable, Task, Task] =
-    new TupleStream[Observable, Task, Task] {
+  implicit def observableInstances(implicit ev: Apply[Task]): EitherStream[Observable, Task, Task] =
+    new EitherStream[Observable, Task, Task] {
       override implicit def H: Functor[Task] with Semigroupal[Task] = ev
 
       override def map[A, B](fa: Observable[A])(f: A => B): Observable[B] = fa.map(f)
@@ -43,5 +43,9 @@ trait ObservableInstances {
       override def fromSeq[A](seq: Seq[A]): Observable[A] = Observable(seq: _*)
 
       override def zip[A, B](fa: Observable[A])(fb: Observable[B]): Observable[(A, B)] = fa.zip(fb)
+
+      override def collect[A, B](fa: Observable[A])(pf: PartialFunction[A, B]): Observable[B] = fa.collect(pf)
+
+      override def tailRecM[A, B](a: A)(f: A => Observable[Either[A, B]]): Observable[B] = Observable.tailRecM(a)(f)
     }
 }
