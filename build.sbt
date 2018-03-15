@@ -1,3 +1,5 @@
+import microsites._
+
 val commonSettings = Seq(
   organization := "io.otters",
   scalaVersion := "2.12.4",
@@ -128,3 +130,70 @@ lazy val `monix-tail` = (project in file("monix-tail"))
     coverageEnabled.in(Test, test) := true
   )
   .dependsOn(core % "compile->compile;test->test", laws % "test->compile")
+
+lazy val docSettings = commonSettings ++ Seq(
+  micrositeName := "otters",
+  micrositeDescription := "Streaming Cats",
+  micrositeAuthor := "Chris Jansen",
+  micrositeHighlightTheme := "atom-one-light",
+  micrositeHomepage := "https://janstenpickle.github.io/otters/",
+  micrositeBaseUrl := "otters",
+  micrositeDocumentationUrl := "api",
+  micrositeGithubOwner := "janstenpickle",
+  micrositeGithubRepo := "otters",
+  micrositeExtraMdFiles := Map(file("CONTRIBUTING.md") -> ExtraMdFileConfig("contributing.md", "docs")),
+  micrositeFavicons := Seq(
+    MicrositeFavicon("favicon16x16.png", "16x16"),
+    MicrositeFavicon("favicon32x32.png", "32x32")
+  ),
+  micrositePalette := Map(
+    "brand-primary" -> "#009933",
+    "brand-secondary" -> "#006600",
+    "brand-tertiary" -> "#339933",
+    "gray-dark" -> "#49494B",
+    "gray" -> "#7B7B7E",
+    "gray-light" -> "#E5E5E6",
+    "gray-lighter" -> "#F4F3F4",
+    "white-color" -> "#FFFFFF"
+  ),
+  micrositePushSiteWith := GitHub4s,
+  micrositeGithubToken := sys.env.get("GITHUB_TOKEN"),
+  micrositeGitterChannel := false,
+  micrositeCDNDirectives := CdnDirectives(
+    jsList = List("https://cdn.rawgit.com/knsv/mermaid/6.0.0/dist/mermaid.min.js"),
+    cssList = List("https://cdn.rawgit.com/knsv/mermaid/6.0.0/dist/mermaid.css")
+  ),
+  addMappingsToSiteDir(mappings in (ScalaUnidoc, packageDoc), micrositeDocumentationUrl),
+  ghpagesNoJekyll := false,
+  scalacOptions in (ScalaUnidoc, unidoc) ++= Seq(
+    "-groups",
+    "-implicits",
+    "-skip-packages",
+    "scalaz",
+    "-sourcepath",
+    baseDirectory.in(LocalRootProject).value.getAbsolutePath,
+    "-doc-root-content",
+    (resourceDirectory.in(Compile).value / "rootdoc.txt").getAbsolutePath
+  ),
+  scalacOptions ~= {
+    _.filterNot(Set("-Yno-predef"))
+  },
+  git.remoteRepo := "git@github.com:janstenpickle/otters.git",
+  unidocProjectFilter in (ScalaUnidoc, unidoc) :=
+    inAnyProject -- inProjects(root),
+  includeFilter in makeSite := "*.html" | "*.css" | "*.png" | "*.jpg" | "*.gif" | "*.svg" | "*.js" | "*.swf" | "*.yml" | "*.md"
+)
+
+lazy val docs = project
+  .dependsOn(core, akka, fs2, `monix-reactive`, `monix-tail`)
+  .settings(
+    moduleName := "otters-docs",
+    name := "Otters docs",
+    publish := (()),
+    publishLocal := (()),
+    publishArtifact := false
+  )
+  .settings(docSettings)
+  .enablePlugins(ScalaUnidocPlugin)
+  .enablePlugins(GhpagesPlugin)
+  .enablePlugins(MicrositesPlugin)
