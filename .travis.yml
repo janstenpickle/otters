@@ -8,7 +8,6 @@ cache:
    - ~/.ivy2
    - ~/.sbt
 script:
-  - "sbt ++${TRAVIS_SCALA_VERSION} \";clean;dependencyUpdates;scalafmt::test;compile\""
-  - "sbt ++${TRAVIS_SCALA_VERSION} \";clean;coverage;test;coverageReport;coverageAggregate\""
+  - "sbt ++${TRAVIS_SCALA_VERSION} \";dependencyUpdates;scalafmt::test;clean;coverage;test;coverageReport;coverageAggregate\""
 after_success:
   - bash <(curl -s https://codecov.io/bash)
