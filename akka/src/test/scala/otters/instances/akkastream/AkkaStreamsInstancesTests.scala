@@ -1,6 +1,5 @@
 package otters.instances.akkastream
 
-import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Keep, RunnableGraph, Source, Sink => ASink}
@@ -29,13 +28,13 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
   implicit val mat: ActorMaterializer = ActorMaterializer()
   implicit val ec: ExecutionContext = as.dispatcher
 
-  implicit val streamLaws: EitherStreamLaws[Source[?, NotUsed], Future, RunnableGraph] =
-    EitherStreamLaws[Source[?, NotUsed], Future, RunnableGraph]
+  implicit val streamLaws: EitherStreamLaws[Src, Future, RunnableGraph] =
+    EitherStreamLaws[Src, Future, RunnableGraph]
 
-  implicit def sourceArb[A](implicit ev: Arbitrary[List[A]]): Arbitrary[Source[A, NotUsed]] =
+  implicit def sourceArb[A](implicit ev: Arbitrary[List[A]]): Arbitrary[Src[A]] =
     Arbitrary(ev.arbitrary.map(li => Source.fromIterator(() => li.iterator)))
 
-  implicit def sourceEq[A](implicit ev: Eq[List[A]]): Eq[Source[A, NotUsed]] = Eq.by { src =>
+  implicit def sourceEq[A](implicit ev: Eq[List[A]]): Eq[Src[A]] = Eq.by { src =>
     waitFor(src.toMat(ASink.seq)(Keep.right).run()).toList
   }
 
@@ -55,25 +54,21 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
     true // force test to pass because akka streams uses a different execution context
   }
 
-  implicit def pipeArb[A, B](implicit ev: Arbitrary[A => B]): Arbitrary[Pipe[Source[?, NotUsed], A, B]] =
-    Arbitrary(ev.arbitrary.map(f => (s: Source[A, NotUsed]) => s.map(f)))
+  implicit def pipeArb[A, B](implicit ev: Arbitrary[A => B]): Arbitrary[Pipe[Src, A, B]] =
+    Arbitrary(ev.arbitrary.map(f => (s: Src[A]) => s.map(f)))
 
   implicit def sinkFnArb[A, B](
     implicit ev: Arbitrary[A => B]
-  ): Arbitrary[Sink[Source[?, NotUsed], RunnableGraph, A, Future[List[B]]]] =
+  ): Arbitrary[Sink[Src, RunnableGraph, A, Future[List[B]]]] =
     Arbitrary(
       ev.arbitrary
-        .map(
-          f => (s: Source[A, NotUsed]) => s.map(f).toMat(ASink.seq)(Keep.right).mapMaterializedValue(_.map(_.toList))
-        )
+        .map(f => (s: Src[A]) => s.map(f).toMat(ASink.seq)(Keep.right).mapMaterializedValue(_.map(_.toList)))
     )
 
-  implicit def sinkArb[A]: Arbitrary[Sink[Source[?, NotUsed], RunnableGraph, A, Future[List[A]]]] =
-    Arbitrary(
-      Gen.const((s: Source[A, NotUsed]) => s.toMat(ASink.seq)(Keep.right).mapMaterializedValue(_.map(_.toList)))
-    )
+  implicit def sinkArb[A]: Arbitrary[Sink[Src, RunnableGraph, A, Future[List[A]]]] =
+    Arbitrary(Gen.const((s: Src[A]) => s.toMat(ASink.seq)(Keep.right).mapMaterializedValue(_.map(_.toList))))
 
-  implicit def sourceIso: Isomorphisms[Source[?, NotUsed]] = Isomorphisms.invariant[Source[?, NotUsed]]
+  implicit def sourceIso: Isomorphisms[Src] = Isomorphisms.invariant[Src]
 
   implicit def cogenFuture[A](implicit A: Cogen[A], th: Cogen[Throwable], ec: TestContext): Cogen[Future[A]] =
     Cogen { (seed: Seed, x: Future[A]) =>
@@ -133,8 +128,8 @@ class AkkaStreamsInstancesTests extends TestBase with BeforeAndAfterAll with Tes
   def pureFuture[A]: Arbitrary[A => Future[A]] = Arbitrary(Gen.const((a: A) => Future.successful(a)))
 
   checkAllAsync(
-    "Source[Int, NotUsed]",
-    implicit ec => AkkaEitherStreamTest[Source[?, NotUsed], Future, RunnableGraph].akkaEitherStream[Int, Int, Int]
+    "Source[Int, _]",
+    implicit ec => AkkaEitherStreamTest[Src, Future, RunnableGraph].akkaEitherStream[Int, Int, Int]
   )
 
   checkAllAsync(

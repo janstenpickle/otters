@@ -1,6 +1,5 @@
 package otters.instances.akkastream
 
-import akka.NotUsed
 import akka.stream.scaladsl.{GraphDSL, Keep, RunnableGraph, Source, Zip}
 import akka.stream.{ClosedShape, SourceShape}
 import cats.{Functor, Semigroupal}
@@ -33,33 +32,31 @@ trait AkkaStreamInstances {
 
       override def to[A, B](fa: Src[A])(sink: Sink[Src, RunnableGraph, A, B]): RunnableGraph[B] = sink(fa)
 
-      override def via[A, B](fa: Source[A, NotUsed])(pipe: Pipe[Src, A, B]): Source[B, NotUsed] = pipe(fa)
+      override def via[A, B](fa: Src[A])(pipe: Pipe[Src, A, B]): Src[B] = pipe(fa)
 
-      override def mapAsync[A, B](fa: Source[A, NotUsed])(f: A => Future[B]): Source[B, NotUsed] = mapAsyncN(fa)(1)(f)
+      override def mapAsync[A, B](fa: Src[A])(f: A => Future[B]): Src[B] = mapAsyncN(fa)(1)(f)
 
-      override def mapAsyncN[A, B](fa: Source[A, NotUsed])(parallelism: Int)(f: A => Future[B]): Source[B, NotUsed] =
+      override def mapAsyncN[A, B](fa: Src[A])(parallelism: Int)(f: A => Future[B]): Src[B] =
         fa.mapAsync(parallelism)(f)
 
-      override def grouped[A](fa: Source[A, NotUsed])(count: Int): Source[Seq[A], NotUsed] = fa.grouped(count)
+      override def grouped[A](fa: Src[A])(count: Int): Source[Seq[A], _] = fa.grouped(count)
 
-      override def groupedWithin[A](
-        fa: Source[A, NotUsed]
-      )(count: Int, timespan: FiniteDuration): Source[Seq[A], NotUsed] =
+      override def groupedWithin[A](fa: Src[A])(count: Int, timespan: FiniteDuration): Src[Seq[A]] =
         fa.groupedWithin(count, timespan)
 
-      override def flatMap[A, B](fa: Source[A, NotUsed])(f: A => Source[B, NotUsed]): Source[B, NotUsed] =
+      override def flatMap[A, B](fa: Src[A])(f: A => Src[B]): Src[B] =
         fa.flatMapConcat(f)
 
-      override def mapConcat[A, B](fa: Source[A, NotUsed])(f: A => immutable.Iterable[B]): Source[B, NotUsed] =
+      override def mapConcat[A, B](fa: Src[A])(f: A => immutable.Iterable[B]): Src[B] =
         fa.mapConcat(f)
 
-      override def pure[A](x: A): Source[A, NotUsed] = Source.single(x)
+      override def pure[A](x: A): Src[A] = Source.single(x)
 
       override def fromIterator[A](iter: => Iterator[A]): Src[A] = Source.fromIterator(() => iter)
 
       override def fromSeq[A](seq: Seq[A]): Src[A] = fromIterator(seq.iterator)
 
-      override def ap[A, B](ff: Source[A => B, NotUsed])(fa: Source[A, NotUsed]): Source[B, NotUsed] =
+      override def ap[A, B](ff: Src[A => B])(fa: Src[A]): Src[B] =
         ff.flatMapConcat(f => fa.map(f))
 
       override def collect[A, B](fa: Src[A])(pf: PartialFunction[A, B]): Src[B] = fa.collect(pf)
