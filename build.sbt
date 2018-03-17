@@ -21,7 +21,7 @@ val commonSettings = Seq(
   ),
   publishMavenStyle := true,
   licenses += ("MIT", url("http://opensource.org/licenses/MIT")),
-  homepage := Some(url("https://github.com/janstenpickle/extruder")),
+  homepage := Some(url("https://github.com/janstenpickle/otters")),
   developers := List(
     Developer(
       "janstenpickle",
