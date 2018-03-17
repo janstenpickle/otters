@@ -34,7 +34,7 @@ val commonSettings = Seq(
   pomIncludeRepository := { _ =>
     false
   },
-  bintrayReleaseOnPublish := false,
+  bintrayReleaseOnPublish := true,
   coverageMinimum := 85,
   releaseCrossBuild := true,
   scalafmtOnCompile := true,

@@ -12,10 +12,10 @@ import scala.concurrent.duration.FiniteDuration
 
 trait WriterTSyntax {
 
-  implicit class WriterTStreamOps[F[_], G[_], H[_], L, A](override val stream: WriterT[F, L, A])
+  implicit class WriterTStreamOps[F[_], L, A](override val stream: WriterT[F, L, A])
       extends WriterTStreamGrouped[F, L, A]
-      with WriterTStreamPipeSink[F, G, H, L, A]
-      with WriterTStreamAsync[F, G, L, A]
+      with WriterTStreamPipeSink[F, L, A]
+      with WriterTStreamAsync[F, L, A]
       with WriterTStreamConcatOps[F, L, A]
 
   implicit class WriterTStreamApply[F[_], A](stream: F[A]) {
@@ -43,70 +43,79 @@ trait WriterTStreamGrouped[F[_], L, A] {
     WriterT(stream.run.grouped(n).map(las => seqTraverse.sequence(las.map(WriterT[Id, L, A])).run))
 }
 
-trait WriterTStreamPipeSink[F[_], G[_], H[_], L, A] {
+trait WriterTStreamPipeSink[F[_], L, A] {
   def stream: WriterT[F, L, A]
 
-  def toSinks[B, C, D](lSink: Sink[F, H, L, B], rSink: Sink[F, H, A, C])(
+  def toSinks[G[_], H[_], B, C, D](lSink: Sink[F, H, L, B], rSink: Sink[F, H, A, C])(
     combine: (B, C) => D
   )(implicit F: TupleStream[F, G, H]): H[D] =
     F.toSinks[L, A, B, C, D](stream.run)(lSink, rSink)(combine)
 
-  def toSinksTupled[B, C](lSink: Sink[F, H, L, B], rSink: Sink[F, H, A, C])(
+  def toSinksTupled[G[_], H[_], B, C](lSink: Sink[F, H, L, B], rSink: Sink[F, H, A, C])(
     implicit F: TupleStream[F, G, H]
   ): H[(B, C)] =
     F.toSinks[L, A, B, C](stream.run)(lSink, rSink)
 
-  def via[B, C](lPipe: Pipe[F, L, B], rPipe: Pipe[F, A, C])(implicit F: TupleStream[F, G, H]): WriterT[F, B, C] =
+  def via[G[_], H[_], B, C](lPipe: Pipe[F, L, B], rPipe: Pipe[F, A, C])(
+    implicit F: TupleStream[F, G, H]
+  ): WriterT[F, B, C] =
     WriterT(F.fanOutFanIn(stream.run)(lPipe, rPipe))
 
-  def stateVia[B](lPipe: Pipe[F, L, B])(implicit F: TupleStream[F, G, H]): WriterT[F, B, A] = via(lPipe, identity)
-  def dataVia[B](rPipe: Pipe[F, A, B])(implicit F: TupleStream[F, G, H]): WriterT[F, L, B] = via(identity, rPipe)
+  def stateVia[G[_], H[_], B](lPipe: Pipe[F, L, B])(implicit F: TupleStream[F, G, H]): WriterT[F, B, A] =
+    via(lPipe, identity)
+  def dataVia[G[_], H[_], B](rPipe: Pipe[F, A, B])(implicit F: TupleStream[F, G, H]): WriterT[F, L, B] =
+    via(identity, rPipe)
 }
 
-trait WriterTStreamAsync[F[_], G[_], L, A] {
+trait WriterTStreamAsync[F[_], L, A] {
   def stream: WriterT[F, L, A]
 
-  def mapAsync[B](f: A => G[B])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, L, B] =
+  def mapAsync[G[_], B](f: A => G[B])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, L, B] =
     WriterT(F.mapAsync(stream.run)(doMapAsync(f).tupled))
 
-  def mapAsync[B](parallelism: Int)(f: A => G[B])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, L, B] =
+  def mapAsync[G[_], B](
+    parallelism: Int
+  )(f: A => G[B])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, L, B] =
     WriterT(F.mapAsyncN(stream.run)(parallelism: Int)(doMapAsync(f).tupled))
 
-  private def doMapAsync[B](f: A => G[B])(implicit G: Functor[G]): (L, A) => G[(L, B)] =
+  private def doMapAsync[G[_], B](f: A => G[B])(implicit G: Functor[G]): (L, A) => G[(L, B)] =
     (l, a) => f(a).map(l -> _)
 
-  def flatMapAsync[B](
+  def flatMapAsync[G[_], B](
     f: A => WriterT[G, L, B]
   )(implicit F: AsyncStream[F, G], G: Functor[G], L: Semigroup[L]): WriterT[F, L, B] =
     WriterT(F.mapAsync(stream.run)(doFlatMapAsync(f).tupled))
 
-  def flatMapAsync[B](
+  def flatMapAsync[G[_], B](
     parallelism: Int
   )(f: A => WriterT[G, L, B])(implicit F: AsyncStream[F, G], G: Functor[G], L: Semigroup[L]): WriterT[F, L, B] =
     WriterT(F.mapAsyncN(stream.run)(parallelism)(doFlatMapAsync(f).tupled))
 
-  private def doFlatMapAsync[B](
+  private def doFlatMapAsync[G[_], B](
     f: A => WriterT[G, L, B]
   )(implicit G: Functor[G], L: Semigroup[L]): (L, A) => G[(L, B)] =
     (l, a) => f(a).mapWritten(L.combine(_, l)).run
 
-  def mapBothAsync[M, B](f: (L, A) => G[(M, B)])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, M, B] =
+  def mapBothAsync[G[_], M, B](f: (L, A) => G[(M, B)])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, M, B] =
     WriterT(F.mapAsync(stream.run)(f.tupled))
 
-  def mapBothAsync[M, B](
+  def mapBothAsync[G[_], M, B](
     parallelism: Int
   )(f: (L, A) => G[(M, B)])(implicit F: AsyncStream[F, G], G: Functor[G]): WriterT[F, M, B] =
     WriterT(F.mapAsyncN(stream.run)(parallelism)(f.tupled))
 
-  def bimapAsync[M, B](f: L => G[M], g: A => G[B])(implicit F: AsyncStream[F, G], G: Semigroupal[G]): WriterT[F, M, B] =
+  def bimapAsync[G[_], M, B](
+    f: L => G[M],
+    g: A => G[B]
+  )(implicit F: AsyncStream[F, G], G: Semigroupal[G]): WriterT[F, M, B] =
     WriterT(F.mapAsync(stream.run)(doBimapAsync(f, g).tupled))
 
-  def bimapAsync[M, B](
+  def bimapAsync[G[_], M, B](
     parallelism: Int
   )(f: L => G[M], g: A => G[B])(implicit F: AsyncStream[F, G], G: Semigroupal[G]): WriterT[F, M, B] =
     WriterT(F.mapAsyncN(stream.run)(parallelism)(doBimapAsync(f, g).tupled))
 
-  def doBimapAsync[M, B](f: L => G[M], g: A => G[B])(implicit G: Semigroupal[G]): (L, A) => G[(M, B)] =
+  def doBimapAsync[G[_], M, B](f: L => G[M], g: A => G[B])(implicit G: Semigroupal[G]): (L, A) => G[(M, B)] =
     (l, a) => G.product(f(l), g(a))
 }
 
