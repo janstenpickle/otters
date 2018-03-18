@@ -1,0 +1,14 @@
+This is the API documentation for [[https://github.com/janstenpickle/extruder extruder]].
+
+The library is divided into a number of modules that either provide core
+functionality, support additional features via third-party dependencies, or
+facilitate integration with other libraries or frameworks.
+
+ - [[otters otters]]: core functionality
+ - [[otters.laws laws]]: typeclass laws
+ - [[otters.instances.akkastream akkastream]]: sdfs
+ - [[otters.instances.typesafe typesafe]]: sdf
+ - [[extruder.refined refined]]: sdfsdf
+
+Please refer to the [[https://janstenpickle.github.io/otters/ documentation]] for a more
+detailed introduction to the library.

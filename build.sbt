@@ -132,8 +132,8 @@ lazy val `monix-tail` = (project in file("monix-tail"))
   .dependsOn(core % "compile->compile;test->test", laws % "test->compile")
 
 lazy val docSettings = commonSettings ++ Seq(
-  micrositeName := "otters",
-  micrositeDescription := "Streaming Cats",
+  micrositeName := "Otters",
+  micrositeDescription := "Otters",
   micrositeAuthor := "Chris Jansen",
   micrositeHighlightTheme := "atom-one-light",
   micrositeHomepage := "https://janstenpickle.github.io/otters/",
