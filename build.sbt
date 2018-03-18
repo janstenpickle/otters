@@ -141,7 +141,10 @@ lazy val docSettings = commonSettings ++ Seq(
   micrositeDocumentationUrl := "api",
   micrositeGithubOwner := "janstenpickle",
   micrositeGithubRepo := "otters",
-  micrositeExtraMdFiles := Map(file("CONTRIBUTING.md") -> ExtraMdFileConfig("contributing.md", "docs")),
+  micrositeExtraMdFiles := Map(
+    file("CONTRIBUTING.md") -> ExtraMdFileConfig("contributing.md", "docs"),
+    file("README.md") -> ExtraMdFileConfig("index.md", "home", Map("section" -> "home", "position" -> "0"))
+  ),
   micrositeFavicons := Seq(
     MicrositeFavicon("favicon16x16.png", "16x16"),
     MicrositeFavicon("favicon32x32.png", "32x32")

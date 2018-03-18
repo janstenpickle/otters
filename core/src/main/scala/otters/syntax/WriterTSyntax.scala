@@ -5,7 +5,6 @@ import cats.kernel.Semigroup
 import cats.syntax.functor._
 import cats.{Applicative, Functor, Id, Monoid, Semigroupal}
 import otters._
-import otters.syntax.stream._
 
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
@@ -41,10 +40,10 @@ trait WriterTStreamGrouped[F[_], L, A] {
     n: Int,
     d: FiniteDuration
   )(implicit F: Stream[F], ev: Applicative[Writer[L, ?]]): WriterT[F, L, Seq[A]] =
-    WriterT(stream.run.groupedWithin(n, d).map(las => seqTraverse.sequence(las.map(WriterT[Id, L, A])).run))
+    WriterT(F.groupedWithin(stream.run)(n, d).map(las => seqTraverse.sequence(las.map(WriterT[Id, L, A])).run))
 
   def grouped(n: Int)(implicit F: Stream[F], ev: Applicative[Writer[L, ?]]): WriterT[F, L, Seq[A]] =
-    WriterT(stream.run.grouped(n).map(las => seqTraverse.sequence(las.map(WriterT[Id, L, A])).run))
+    WriterT(F.grouped(stream.run)(n).map(las => seqTraverse.sequence(las.map(WriterT[Id, L, A])).run))
 }
 
 trait WriterTStreamPipeSink[F[_], P[_, _], S[_, _], L, A] {
@@ -129,13 +128,13 @@ trait WriterTStreamConcatOps[F[_], L, A] extends WriterConcatOps {
     f: A => immutable.Iterable[B],
     f2: ((L, immutable.Iterable[B])) => immutable.Iterable[(L, B)]
   )(implicit F: Stream[F], L: Monoid[L]): WriterT[F, L, B] =
-    WriterT(stream.run.mapConcat { case (l, a) => f2(l -> f(a)) })
+    WriterT(F.mapConcat(stream.run) { case (l, a) => f2(l -> f(a)) })
 
   def safeMapConcat[B](
     f: A => immutable.Iterable[B],
     f2: ((L, immutable.Iterable[Option[B]])) => immutable.Iterable[(L, Option[B])]
   )(implicit F: Stream[F], L: Monoid[L]): WriterT[F, L, Option[B]] =
-    WriterT(stream.run.mapConcat { case (l, a) => f2(l -> makeSafe(f(a))) })
+    WriterT(F.mapConcat(stream.run) { case (l, a) => f2(l -> makeSafe(f(a))) })
 
   def mapConcatHead[B](f: A => immutable.Iterable[B])(implicit F: Stream[F], L: Monoid[L]): WriterT[F, L, B] =
     mapConcat[B](f, head[L, B])
