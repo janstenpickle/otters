@@ -6,14 +6,17 @@ import cats.kernel.Monoid
 import cats.syntax.applicative._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import otters.syntax.writer._
+import otters.syntax.{WriterTExtendedSyntax, WriterTSyntax}
 
 import scala.concurrent.duration._
 
-trait WriterStreamSuite[F[_], G[_], H[_]] extends TestBase[F, G, H] {
-  def mkWriterStream[S: Monoid, A](src: F[A]): WriterT[F, S, A]
-  def mkWriterStream[S, A](src: F[A], initial: S): WriterT[F, S, A]
-  def mkWriterStream[S, A](src: F[(S, A)]): WriterT[F, S, A]
+trait WriterStreamSuite[F[_], G[_], H[_], P[_, _], S[_, _]] extends TestBase[F, G, H, P, S] {
+  object WriterSyntax extends WriterTSyntax with WriterTExtendedSyntax[P, S]
+  import WriterSyntax._
+
+  def mkWriterStream[L: Monoid, A](src: F[A]): WriterT[F, L, A]
+  def mkWriterStream[L, A](src: F[A], initial: L): WriterT[F, L, A]
+  def mkWriterStream[L, A](src: F[(L, A)]): WriterT[F, L, A]
 
   def runConcat[S: Monoid, A, B](source: F[(S, A)])(f: WriterT[F, S, A] => WriterT[F, S, B]): Seq[(S, B)] =
     runStream(f(mkWriterStream[S, A](source)).run)

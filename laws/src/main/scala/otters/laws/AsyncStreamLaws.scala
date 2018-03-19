@@ -6,8 +6,8 @@ import otters.AsyncStream
 
 import cats.syntax.functor._
 
-trait AsyncStreamLaws[F[_], G[_]] {
-  implicit def F: AsyncStream[F, G]
+trait AsyncStreamLaws[F[_], G[_]] extends StreamLaws[F] {
+  override implicit def F: AsyncStream[F, G]
 
   def mapAsyncAssociativity[A, B](fa: F[A], f: A => B, gb: B => G[B]): IsEq[F[B]] =
     fa.map(f) <-> F.mapAsync(fa)(a => gb(f(a)))

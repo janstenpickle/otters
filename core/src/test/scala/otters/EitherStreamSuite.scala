@@ -1,11 +1,13 @@
 package otters
 
 import cats.data.{EitherT, NonEmptyList}
-import otters.syntax.either._
 import cats.syntax.either._
 import cats.syntax.applicative._
+import otters.syntax.{EitherTExtendedSyntax, EitherTSyntax}
 
-trait EitherStreamSuite[F[_], G[_], H[_]] extends TestBase[F, G, H] {
+trait EitherStreamSuite[F[_], G[_], H[_], P[_, _], S[_, _]] extends TestBase[F, G, H, P, S] {
+  object EitherSyntax extends EitherTSyntax with EitherTExtendedSyntax[P, S]
+  import EitherSyntax._
 
   def mkEitherStream[A, B](src: F[Either[A, B]]): EitherT[F, A, B]
   def mkEitherStream[A](src: F[A], isLeft: A => Boolean): EitherT[F, A, A]
@@ -52,7 +54,7 @@ trait EitherStreamSuite[F[_], G[_], H[_]] extends TestBase[F, G, H] {
   test("can send data to different sinks") {
     forAll { values: NonEmptyList[Either[Int, String]] =>
       val (left, right) =
-        materialize(mkEitherStream[Int, String](F.fromSeq(values.toList)).toSinks(mkSeqSink, mkSeqSink)(_ -> _))
+        materialize(mkEitherStream[Int, String](F.fromSeq(values.toList)).toSinks(mkSeqSink, mkSeqSink))
 
       assert(waitFor(left) === values.collect { case Left(a) => a } && waitFor(right) === values.collect {
         case Right(a) => a

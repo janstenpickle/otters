@@ -5,13 +5,14 @@ import cats.data.NonEmptyList
 import org.scalacheck.{Arbitrary, Gen}
 import org.scalatest.FunSuite
 import org.scalatest.prop.PropertyChecks
+import otters.syntax.WriterTSyntax
 
-trait TestBase[F[_], G[_], H[_]] extends FunSuite with PropertyChecks {
-  implicit def F: EitherStream[F, G, H]
+trait TestBase[F[_], G[_], H[_], P[_, _], S[_, _]] extends FunSuite with PropertyChecks {
+  implicit def F: EitherStream[F, G, H, P, S]
   implicit def G: Monad[G]
 
-  def mkPipe[A, B](f: A => B): Pipe[F, A, B]
-  def mkSeqSink[A]: Sink[F, H, A, G[Seq[A]]]
+  def mkPipe[A, B](f: A => B): P[A, B]
+  def mkSeqSink[A]: S[A, G[Seq[A]]]
 
   def runStream[A](stream: F[A]): Seq[A]
 

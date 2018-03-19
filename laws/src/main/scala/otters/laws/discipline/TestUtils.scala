@@ -25,21 +25,4 @@ trait TestUtils {
         throw e
     }
   }
-
-  /**
-    * Catches `System.err` output, for testing purposes.
-    */
-  def catchSystemErr(thunk: => Unit): String = synchronized {
-    val oldErr = System.err
-    val outStream = new ByteArrayOutputStream()
-    val fakeErr = new PrintStream(outStream)
-    System.setErr(fakeErr)
-    try {
-      thunk
-    } finally {
-      System.setErr(oldErr)
-      fakeErr.close()
-    }
-    outStream.toString("utf-8")
-  }
 }

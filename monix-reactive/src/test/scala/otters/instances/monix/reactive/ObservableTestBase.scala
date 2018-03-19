@@ -6,17 +6,18 @@ import monix.execution.Ack
 import monix.execution.Ack.Continue
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.{Consumer, Observable, Observer}
+import otters.instances.monix.reactive.{Pipe, Sink}
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 
-trait ObservableTestBase extends TestBase[Observable, Task, Task] {
-  override implicit def F: EitherStream[Observable, Task, Task] =
+trait ObservableTestBase extends TestBase[Observable, Task, Task, Pipe, Sink] {
+  override implicit def F: EitherStream[Observable, Task, Task, Pipe, Sink] =
     otters.instances.monix.reactive.observableInstances
 
-  override def mkPipe[A, B](f: A => B): Pipe[Observable, A, B] = _.map(f)
+  override def mkPipe[A, B](f: A => B): Pipe[A, B] = _.map(f)
 
-  override def mkSeqSink[A]: Sink[Observable, Task, A, Task[Seq[A]]] =
+  override def mkSeqSink[A]: Sink[A, Task[Seq[A]]] =
     _.consumeWith(
       Consumer.create(
         (_, _, callback) =>
@@ -41,5 +42,5 @@ trait ObservableTestBase extends TestBase[Observable, Task, Task] {
 
   override def waitFor[A](fut: Task[A]): A = Await.result(fut.runAsync, Duration.Inf)
 
-  override implicit def G: Monad[Task] = monix.eval.instances.CatsAsyncForTask
+  override implicit def G: Monad[Task] = monix.eval.instances.CatsConcurrentForTask
 }

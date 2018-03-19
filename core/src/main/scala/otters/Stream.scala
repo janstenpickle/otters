@@ -12,7 +12,6 @@ import scala.concurrent.duration.FiniteDuration
   def mapConcat[A, B](fa: F[A])(f: A => immutable.Iterable[B]): F[B]
   def fromIterator[A](iter: => Iterator[A]): F[A]
   def fromSeq[A](seq: Seq[A]): F[A]
-  def via[A, B](fa: F[A])(pipe: Pipe[F, A, B]): F[B]
   def zip[A, B](fa: F[A])(fb: F[B]): F[(A, B)]
   def collect[A, B](fa: F[A])(pf: PartialFunction[A, B]): F[B]
 }

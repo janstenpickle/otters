@@ -6,7 +6,6 @@ import cats.laws.discipline._
 import cats.{ContravariantSemigroupal, Eq, Functor}
 import org.scalacheck.Prop.forAll
 import org.scalacheck.{Arbitrary, Cogen}
-import otters.Pipe
 import otters.laws.StreamLaws
 
 trait StreamTests[F[_]] extends MonadTests[F] {
@@ -19,8 +18,6 @@ trait StreamTests[F[_]] extends MonadTests[F] {
     ArbFC: Arbitrary[F[C]],
     ArbFAtoB: Arbitrary[F[A => B]],
     ArbFBtoC: Arbitrary[F[B => C]],
-    ArbPipeAToB: Arbitrary[Pipe[F, A, B]],
-    ArbPipeBToC: Arbitrary[Pipe[F, B, C]],
     CogenA: Cogen[A],
     CogenB: Cogen[B],
     CogenC: Cogen[C],
@@ -40,10 +37,10 @@ trait StreamTests[F[_]] extends MonadTests[F] {
       name = "stream",
       parent = Some(monad[A, B, C]),
       "mapConcat associativity" -> forAll(laws.mapConcatAssociativity[A, B, C] _),
-      "pipe covariant composition" -> forAll(laws.pipeCovariantComposition[A, B, C] _),
       "zip homomorphism" -> forAll(laws.zipHomomorphism[A, B] _),
       "grouped homomorphism" -> forAll(laws.groupedHomomorphism[A] _),
-      "grouped within homomorphism" -> forAll(laws.groupedWithinHomomorphism[A] _)
+      "grouped within homomorphism" -> forAll(laws.groupedWithinHomomorphism[A] _),
+      "collect homomorphism" -> forAll(laws.collectHomomorphism[A, B] _)
     )
   }
 }

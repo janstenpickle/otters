@@ -1,14 +1,14 @@
 package otters
 
-import akka.stream.scaladsl.RunnableGraph
+import akka.stream.scaladsl.{RunnableGraph, Sink}
 import cats.data.WriterT
 import cats.kernel.Monoid
-import otters.instances.akkastream.Src
-import otters.syntax.writer._
+import otters.instances.akkastream.{Flw, Src}
+import otters.syntax.akkastream.writer._
 
 import scala.concurrent.Future
 
-class AkkaWriterStreamSuite extends AkkaBaseSuite with WriterStreamSuite[Src, Future, RunnableGraph] {
+class AkkaWriterStreamSuite extends AkkaBaseSuite with WriterStreamSuite[Src, Future, RunnableGraph, Flw, Sink] {
 
   override def mkWriterStream[S: Monoid, A](src: Src[A]): WriterT[Src, S, A] = src.toWriter
 

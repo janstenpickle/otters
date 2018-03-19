@@ -6,14 +6,14 @@ import cats.{Apply, Functor, Id, Semigroupal, StackSafeMonad}
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 
-object SeqInstance extends EitherStream[Seq, Id, Id] with StackSafeMonad[Seq] {
-  override def via[A, B](fa: Seq[A])(pipe: Pipe[Seq, A, B]): Seq[B] = pipe(fa)
+object SeqInstance extends EitherStreamFunctionPipeSink[Seq, Id, Id] with StackSafeMonad[Seq] {
+  override def via[A, B](fa: Seq[A])(pipe: FunctionPipe[Seq, A, B]): Seq[B] = pipe(fa)
 
   override def mapAsync[A, B](fa: Seq[A])(f: A => Id[B]): Seq[B] = fa.map(f)
 
   override def mapAsyncN[A, B](fa: Seq[A])(parallelism: Int)(f: A => Id[B]): Seq[B] = fa.map(f)
 
-  override def to[A, B](fa: Seq[A])(sink: Sink[Seq, Id, A, B]): Id[B] = sink(fa)
+  override def to[A, B](fa: Seq[A])(sink: FunctionSink[Seq, Id, A, B]): Id[B] = sink(fa)
 
   override def grouped[A](fa: Seq[A])(count: Int): Seq[Seq[A]] = fa.grouped(count).toSeq
 
@@ -33,7 +33,32 @@ object SeqInstance extends EitherStream[Seq, Id, Id] with StackSafeMonad[Seq] {
 
   override def zip[A, B](fa: Seq[A])(fb: Seq[B]): Seq[(A, B)] = fa.zip(fb)
 
-  override implicit def H: Functor[Id] with Semigroupal[Id] = cats.catsInstancesForId
-
   override def collect[A, B](fa: Seq[A])(pf: PartialFunction[A, B]): Seq[B] = fa.collect(pf)
+
+  override def toEitherSinks[A, B, C, D, E](
+    fab: Seq[Either[A, B]]
+  )(lSink: FunctionSink[Seq, Id, A, C], rSink: FunctionSink[Seq, Id, B, D])(combine: (C, D) => E): Id[E] = {
+    val l = lSink(fab.collect { case Left(a) => a })
+    val r = rSink(fab.collect { case Right(b) => b })
+
+    combine(l, r)
+  }
+
+  override def toSinks[A, B, C, D, E](
+    fab: Seq[(A, B)]
+  )(lSink: FunctionSink[Seq, Id, A, C], rSink: FunctionSink[Seq, Id, B, D])(combine: (C, D) => E): Id[E] = {
+    val l = lSink(fab.map(_._1))
+    val r = rSink(fab.map(_._2))
+
+    combine(l, r)
+  }
+
+  override def fanOutFanIn[A, B, C, D](
+    fab: Seq[(A, B)]
+  )(lPipe: FunctionPipe[Seq, A, C], rPipe: FunctionPipe[Seq, B, D]): Seq[(C, D)] = {
+    val l = lPipe(fab.map(_._1))
+    val r = rPipe(fab.map(_._2))
+
+    l.zip(r)
+  }
 }
