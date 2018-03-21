@@ -1,30 +1,18 @@
 package otters
 
-import cats.{Functor, Semigroupal}
-import cats.syntax.functor._
+trait TupleStream[F[_], G[_], H[_], P[_, _], S[_, _]]
+    extends StreamSink[F, H, S]
+    with StreamPipe[F, P]
+    with AsyncStream[F, G] {
 
-trait TupleStream[F[_], G[_], H[_]] extends StreamSink[F, H] with AsyncStream[F, G] {
-  implicit def H: Functor[H] with Semigroupal[H]
+  def toSinks[A, B, C, D, E](fab: F[(A, B)])(lSink: S[A, C], rSink: S[B, D])(combine: (C, D) => E): H[E]
 
-  def fanOutFanIn[A, B, C, D](fab: F[(A, B)])(lPipe: Pipe[F, A, C], rPipe: Pipe[F, B, D]): F[(C, D)] = {
-    val l = lPipe(map(fab)(_._1))
-    val r = rPipe(map(fab)(_._2))
+  def toSinks[A, B, C, D](fab: F[(A, B)])(lSink: S[A, C], rSink: S[B, D]): H[(C, D)] =
+    toSinks[A, B, C, D, (C, D)](fab)(lSink, rSink)(_ -> _)
 
-    zip(l)(r)
-  }
+  def fanOutFanIn[A, B, C, D](fab: F[(A, B)])(lPipe: P[A, C], rPipe: P[B, D]): F[(C, D)]
 
-  def toSinks[A, B, C, D, E](fab: F[(A, B)])(lSink: Sink[F, H, A, C], rSink: Sink[F, H, B, D])(
-    combine: (C, D) => E
-  ): H[E] = toSinks[A, B, C, D](fab)(lSink, rSink).map(combine.tupled)
+  def tupleLeftVia[A, B, C](fab: F[(A, B)])(lPipe: P[A, C]): F[(C, B)]
 
-  def toSinks[A, B, C, D](fab: F[(A, B)])(lSink: Sink[F, H, A, C], rSink: Sink[F, H, B, D]): H[(C, D)] = {
-    val l = lSink(map(fab)(_._1))
-    val r = rSink(map(fab)(_._2))
-
-    H.product(l, r)
-  }
-
-  def tupleLeftVia[A, B, C](fab: F[(A, B)])(lPipe: Pipe[F, A, C]): F[(C, B)] = fanOutFanIn(fab)(lPipe, identity)
-
-  def tupleRightVia[A, B, C](fab: F[(A, B)])(rPipe: Pipe[F, B, C]): F[(A, C)] = fanOutFanIn(fab)(identity, rPipe)
+  def tupleRightVia[A, B, C](fab: F[(A, B)])(rPipe: P[B, C]): F[(A, C)]
 }

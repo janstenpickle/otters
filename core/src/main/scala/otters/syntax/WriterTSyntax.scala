@@ -14,7 +14,6 @@ trait WriterTSyntax {
 
   implicit class WriterTStreamOps[F[_], L, A](override val stream: WriterT[F, L, A])
       extends WriterTStreamGrouped[F, L, A]
-      with WriterTStreamPipeSink[F, L, A]
       with WriterTStreamAsync[F, L, A]
       with WriterTStreamConcatOps[F, L, A]
 
@@ -26,6 +25,11 @@ trait WriterTSyntax {
   implicit class WriterTStreamApplyTuple[F[_], L, A](stream: F[(L, A)]) {
     def toWriter: WriterT[F, L, A] = WriterT(stream)
   }
+}
+
+trait WriterTExtendedSyntax[P[_, _], S[_, _]] {
+  implicit class WriterTStreamExtOps[F[_], L, A](override val stream: WriterT[F, L, A])
+      extends WriterTStreamPipeSink[F, P, S, L, A]
 }
 
 trait WriterTStreamGrouped[F[_], L, A] {
@@ -43,28 +47,27 @@ trait WriterTStreamGrouped[F[_], L, A] {
     WriterT(stream.run.grouped(n).map(las => seqTraverse.sequence(las.map(WriterT[Id, L, A])).run))
 }
 
-trait WriterTStreamPipeSink[F[_], L, A] {
+trait WriterTStreamPipeSink[F[_], P[_, _], S[_, _], L, A] {
   def stream: WriterT[F, L, A]
 
-  def toSinks[G[_], H[_], B, C, D](lSink: Sink[F, H, L, B], rSink: Sink[F, H, A, C])(
+  def toSinks[G[_], H[_], B, C, D](lSink: S[L, B], rSink: S[A, C])(
     combine: (B, C) => D
-  )(implicit F: TupleStream[F, G, H]): H[D] =
+  )(implicit F: TupleStream[F, G, H, P, S]): H[D] =
     F.toSinks[L, A, B, C, D](stream.run)(lSink, rSink)(combine)
 
-  def toSinksTupled[G[_], H[_], B, C](lSink: Sink[F, H, L, B], rSink: Sink[F, H, A, C])(
-    implicit F: TupleStream[F, G, H]
+  def toSinksTupled[G[_], H[_], B, C](lSink: S[L, B], rSink: S[A, C])(
+    implicit F: TupleStream[F, G, H, P, S]
   ): H[(B, C)] =
     F.toSinks[L, A, B, C](stream.run)(lSink, rSink)
 
-  def via[G[_], H[_], B, C](lPipe: Pipe[F, L, B], rPipe: Pipe[F, A, C])(
-    implicit F: TupleStream[F, G, H]
-  ): WriterT[F, B, C] =
+  def via[G[_], H[_], B, C](lPipe: P[L, B], rPipe: P[A, C])(implicit F: TupleStream[F, G, H, P, S]): WriterT[F, B, C] =
     WriterT(F.fanOutFanIn(stream.run)(lPipe, rPipe))
 
-  def stateVia[G[_], H[_], B](lPipe: Pipe[F, L, B])(implicit F: TupleStream[F, G, H]): WriterT[F, B, A] =
-    via(lPipe, identity)
-  def dataVia[G[_], H[_], B](rPipe: Pipe[F, A, B])(implicit F: TupleStream[F, G, H]): WriterT[F, L, B] =
-    via(identity, rPipe)
+  def dataVia[G[_], H[_], B](dataPipe: P[A, B])(implicit F: TupleStream[F, G, H, P, S]): WriterT[F, L, B] =
+    WriterT(F.tupleRightVia(stream.run)(dataPipe))
+
+  def stateVia[G[_], H[_], M](statePipe: P[L, M])(implicit F: TupleStream[F, G, H, P, S]): WriterT[F, M, A] =
+    WriterT(F.tupleLeftVia(stream.run)(statePipe))
 }
 
 trait WriterTStreamAsync[F[_], L, A] {

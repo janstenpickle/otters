@@ -3,9 +3,18 @@ package otters
 import cats.data.EitherT
 import monix.eval.Task
 import monix.tail.Iterant
-import otters.syntax.either._
 
-class IterantEitherStreamSuite extends IterantTestBase with EitherStreamSuite[Iterant[Task, ?], Task, Task] {
+class IterantEitherStreamSuite
+    extends IterantTestBase
+    with EitherStreamSuite[Iterant[Task, ?], Task, Task, FunctionPipe[Iterant[Task, ?], ?, ?], FunctionSink[
+      Iterant[Task, ?],
+      Task,
+      ?,
+      ?
+    ]] {
+
+  import EitherSyntax._
+
   override def mkEitherStream[A, B](src: Iterant[Task, Either[A, B]]): EitherT[Iterant[Task, ?], A, B] = src.toEitherT
 
   override def mkEitherStream[A](src: Iterant[Task, A], isLeft: A => Boolean): EitherT[Iterant[Task, ?], A, A] =

@@ -3,21 +3,19 @@ package otters.syntax
 import cats.Applicative
 import cats.data.EitherT
 import cats.syntax.functor._
-import otters.{AsyncStream, EitherStream, Pipe, Sink}
+import otters.{AsyncStream, EitherStream, EitherStreamBase}
 
 trait EitherTSyntax {
-  implicit class EitherTStreamOps[F[_], A, B](override val stream: EitherT[F, A, B])
-      extends EitherTStreamAsync[F, A, B]
-      with EitherTStreamPipeSink[F, A, B]
+  implicit class EitherTStreamOps[F[_], A, B](override val stream: EitherT[F, A, B]) extends EitherTStreamAsync[F, A, B]
 
   implicit class EitherTStreamApply[F[_], G[_], H[_], A](stream: F[A]) {
-    def split[B, C](isLeft: A => Boolean, f: A => B, g: A => C)(implicit F: EitherStream[F, G, H]): EitherT[F, B, C] =
+    def split[B, C](isLeft: A => Boolean, f: A => B, g: A => C)(implicit F: EitherStreamBase[F]): EitherT[F, B, C] =
       EitherT(F.split[A, B, C](stream)(isLeft, f, g))
 
-    def split(isLeft: A => Boolean)(implicit F: EitherStream[F, G, H]): EitherT[F, A, A] =
+    def split(isLeft: A => Boolean)(implicit F: EitherStreamBase[F]): EitherT[F, A, A] =
       EitherT(F.split[A](stream)(isLeft))
 
-    def catchNonFatal[B](f: A => B)(implicit F: EitherStream[F, G, H]): EitherT[F, Throwable, B] =
+    def catchNonFatal[B](f: A => B)(implicit F: EitherStreamBase[F]): EitherT[F, Throwable, B] =
       EitherT(F.catchNonFatal(stream)(f))
   }
 
@@ -26,22 +24,29 @@ trait EitherTSyntax {
   }
 }
 
-trait EitherTStreamPipeSink[F[_], A, B] {
+trait EitherTExtendedSyntax[P[_, _], S[_, _]] {
+  implicit class EitherTStreamExtOps[F[_], A, B](override val stream: EitherT[F, A, B])
+      extends EitherTStreamPipeSink[F, P, S, A, B]
+}
+
+trait EitherTStreamPipeSink[F[_], P[_, _], S[_, _], A, B] {
   def stream: EitherT[F, A, B]
 
-  def via[G[_], H[_], C, D](lPipe: Pipe[F, A, C], rPipe: Pipe[F, B, D])(
-    implicit F: EitherStream[F, G, H]
-  ): EitherT[F, C, D] =
+  def via[G[_], H[_], C, D](lPipe: P[A, C], rPipe: P[B, D])(implicit F: EitherStream[F, G, H, P, S]): EitherT[F, C, D] =
     EitherT(F.via(stream.value)(lPipe, rPipe))
 
-  def leftVia[G[_], H[_], C](lPipe: Pipe[F, A, C])(implicit F: EitherStream[F, G, H]): EitherT[F, C, B] =
-    via(lPipe, identity)
-  def rightVia[G[_], H[_], C](rPipe: Pipe[F, B, C])(implicit F: EitherStream[F, G, H]): EitherT[F, A, C] =
-    via(identity, rPipe)
+  def leftVia[G[_], H[_], C](lPipe: P[A, C])(implicit F: EitherStream[F, G, H, P, S]): EitherT[F, C, B] =
+    EitherT(F.leftVia(stream.value)(lPipe))
 
-  def toSinks[G[_], H[_], C, D, E](lSink: Sink[F, H, A, C], rSink: Sink[F, H, B, D])(
+  def rightVia[G[_], H[_], C](rPipe: P[B, C])(implicit F: EitherStream[F, G, H, P, S]): EitherT[F, A, C] =
+    EitherT(F.rightVia(stream.value)(rPipe))
+
+  def toSinks[G[_], H[_], C, D](lSink: S[A, C], rSink: S[B, D])(implicit F: EitherStream[F, G, H, P, S]): H[(C, D)] =
+    F.toEitherSinks[A, B, C, D](stream.value)(lSink, rSink)
+
+  def toSinks[G[_], H[_], C, D, E](lSink: S[A, C], rSink: S[B, D])(
     combine: (C, D) => E
-  )(implicit F: EitherStream[F, G, H]): H[E] =
+  )(implicit F: EitherStream[F, G, H, P, S]): H[E] =
     F.toEitherSinks[A, B, C, D, E](stream.value)(lSink, rSink)(combine)
 }
 

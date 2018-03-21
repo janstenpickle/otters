@@ -3,9 +3,12 @@ package otters
 import cats.data.EitherT
 import monix.eval.Task
 import monix.reactive.Observable
-import otters.syntax.either._
+import otters.instances.monix.reactive.{Pipe, Sink}
+import otters.syntax.monix.reactive.either._
 
-class ObservableEitherStreamSuite extends ObservableTestBase with EitherStreamSuite[Observable, Task, Task] {
+class ObservableEitherStreamSuite
+    extends ObservableTestBase
+    with EitherStreamSuite[Observable, Task, Task, Pipe, Sink] {
   override def mkEitherStream[A, B](src: Observable[Either[A, B]]): EitherT[Observable, A, B] = src.toEitherT
 
   override def mkEitherStream[A](src: Observable[A], isLeft: A => Boolean): EitherT[Observable, A, A] =

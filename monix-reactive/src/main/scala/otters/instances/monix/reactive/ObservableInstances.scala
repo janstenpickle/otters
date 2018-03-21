@@ -2,27 +2,24 @@ package otters.instances.monix.reactive
 
 import _root_.monix.eval.Task
 import _root_.monix.reactive.Observable
-import cats.{Apply, Functor, Semigroupal}
-import otters.{EitherStream, Pipe, Sink}
+import monix.execution.Scheduler
+import monix.reactive.observables.ConnectableObservable
+import monix.reactive.subjects.{ConcurrentSubject, ReplaySubject}
+import otters.EitherStreamFunctionPipeSink
+import otters.instances.monix.reactive
 
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 
 trait ObservableInstances {
-  implicit def observableInstances(implicit ev: Apply[Task]): EitherStream[Observable, Task, Task] =
-    new EitherStream[Observable, Task, Task] {
-      override implicit def H: Functor[Task] with Semigroupal[Task] = ev
-
+  implicit def observableInstances(implicit s: Scheduler): EitherStreamFunctionPipeSink[Observable, Task, Task] =
+    new EitherStreamFunctionPipeSink[Observable, Task, Task] {
       override def map[A, B](fa: Observable[A])(f: A => B): Observable[B] = fa.map(f)
 
       override def mapAsync[A, B](fa: Observable[A])(f: A => Task[B]): Observable[B] = fa.mapTask(f)
 
       override def mapAsyncN[A, B](fa: Observable[A])(parallelism: Int)(f: A => Task[B]): Observable[B] =
         fa.mapParallelUnordered(1)(f)
-
-      override def via[A, B](fa: Observable[A])(pipe: Pipe[Observable, A, B]): Observable[B] = pipe(fa)
-
-      override def to[A, B](fa: Observable[A])(sink: Sink[Observable, Task, A, B]): Task[B] = sink(fa)
 
       override def grouped[A](fa: Observable[A])(count: Int): Observable[Seq[A]] = fa.bufferTumbling(count)
 
@@ -47,5 +44,42 @@ trait ObservableInstances {
       override def collect[A, B](fa: Observable[A])(pf: PartialFunction[A, B]): Observable[B] = fa.collect(pf)
 
       override def tailRecM[A, B](a: A)(f: A => Observable[Either[A, B]]): Observable[B] = Observable.tailRecM(a)(f)
+
+      override def toEitherSinks[A, B, C, D, E](
+        fab: Observable[Either[A, B]]
+      )(lSink: Observable[A] => Task[C], rSink: Observable[B] => Task[D])(combine: (C, D) => E): Task[E] = {
+        val subject = ReplaySubject[Either[A, B]]()
+
+        ConnectableObservable.unsafeMulticast(fab, subject).connect()
+
+        val l = lSink(subject.collect { case Left(a) => a })
+        val r = rSink(subject.collect { case Right(b) => b })
+
+        l.flatMap(ll => r.map(combine(ll, _)))
+      }
+
+      override def toSinks[A, B, C, D, E](
+        fab: Observable[(A, B)]
+      )(lSink: Observable[A] => Task[C], rSink: Observable[B] => Task[D])(combine: (C, D) => E): Task[E] = {
+        val subject = ReplaySubject[(A, B)]()
+
+        ConnectableObservable.unsafeMulticast(fab, subject).connect()
+
+        val l = lSink(subject.map(_._1))
+        val r = rSink(subject.map(_._2))
+
+        l.flatMap(ll => r.map(combine(ll, _)))
+      }
+
+      override def fanOutFanIn[A, B, C, D](
+        fab: Observable[(A, B)]
+      )(lPipe: reactive.Pipe[A, C], rPipe: reactive.Pipe[B, D]): Observable[(C, D)] = {
+        val subject = ConcurrentSubject.replay[(A, B)]
+
+        ConnectableObservable.unsafeMulticast(fab, subject).connect()
+
+        zip(lPipe(subject.map(_._1)))(rPipe(subject.map(_._2)))
+      }
+
     }
 }

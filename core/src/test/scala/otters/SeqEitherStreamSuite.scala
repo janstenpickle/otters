@@ -2,10 +2,14 @@ package otters
 
 import cats.Id
 import cats.data.EitherT
+import otters.syntax.{EitherTExtendedSyntax, EitherTSyntax}
 
-import otters.syntax.either._
+class SeqEitherStreamSuite
+    extends EitherStreamSuite[Seq, Id, Id, FunctionPipe[Seq, ?, ?], FunctionSink[Seq, Id, ?, ?]]
+    with SeqStreamBase {
 
-class SeqEitherStreamSuite extends EitherStreamSuite[Seq, Id, Id] with SeqStreamBase {
+  import EitherSyntax._
+
   override def mkEitherStream[A, B](src: Seq[Either[A, B]]): EitherT[Seq, A, B] = src.toEitherT
   override def mkEitherStream[A](src: Seq[A], isLeft: A => Boolean): EitherT[Seq, A, A] = src.split(isLeft)
   override def mkEitherStream[A, B, C](src: Seq[A], isLeft: A => Boolean, f: A => B, g: A => C): EitherT[Seq, B, C] =
