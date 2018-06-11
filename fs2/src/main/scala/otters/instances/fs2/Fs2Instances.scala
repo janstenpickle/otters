@@ -2,7 +2,14 @@ package otters.instances.fs2
 
 import _root_.fs2.{Stream => Fs2Stream}
 import cats.effect.Effect
-import otters.{EitherStreamFunctionPipeSink, FunctionPipe, FunctionSink}
+import otters.{
+  EitherStream,
+  EitherStreamFunctionPipe,
+  EitherStreamFunctionPipeSink,
+  EitherStreamPipe,
+  FunctionPipe,
+  FunctionSink
+}
 
 import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
@@ -74,4 +81,48 @@ trait Fs2Instances {
         zip(l)(r)
       }
     }
+
+  implicit def fs2PipeInstances[F[_], I](
+    implicit F: Effect[F],
+    ev: EitherStreamFunctionPipeSink[Fs2Stream[F, ?], F, F]
+  ): EitherStreamFunctionPipe[fs2.Stream[F, ?], F, F, I] = new EitherStreamFunctionPipe[Fs2Stream[F, ?], F, F, I] {
+    override implicit val underlying: EitherStream[
+      fs2.Stream[F, ?],
+      F,
+      F,
+      FunctionPipe[fs2.Stream[F, ?], ?, ?],
+      FunctionSink[fs2.Stream[F, ?], F, ?, ?]
+    ] = ev
+
+    override def toEitherSinks[A, B, C, D, E](fab: FunctionPipe[fs2.Stream[F, ?], I, Either[A, B]])(
+      lSink: FunctionSink[fs2.Stream[F, ?], F, A, C],
+      rSink: FunctionSink[fs2.Stream[F, ?], F, B, D]
+    )(combine: (C, D) => E): FunctionSink[fs2.Stream[F, ?], F, I, E] = fab.andThen { x =>
+      val l = lSink(x.collect { case Left(a) => a })
+      val r = rSink(x.collect { case Right(b) => b })
+
+      F.flatMap(l)(ll => F.map(r)(combine(ll, _)))
+    }
+
+    override def toSinks[A, B, C, D, E](fab: FunctionPipe[fs2.Stream[F, ?], I, (A, B)])(
+      lSink: FunctionSink[fs2.Stream[F, ?], F, A, C],
+      rSink: FunctionSink[fs2.Stream[F, ?], F, B, D]
+    )(combine: (C, D) => E): FunctionSink[fs2.Stream[F, ?], F, I, E] = fab.andThen { x =>
+      val l = lSink(x.map(_._1))
+      val r = rSink(x.map(_._2))
+
+      F.flatMap(l)(ll => F.map(r)(combine(ll, _)))
+    }
+
+    override def fanOutFanIn[A, B, C, D](fab: FunctionPipe[fs2.Stream[F, ?], I, (A, B)])(
+      lPipe: FunctionPipe[fs2.Stream[F, ?], A, C],
+      rPipe: FunctionPipe[fs2.Stream[F, ?], B, D]
+    ): FunctionPipe[fs2.Stream[F, ?], I, (C, D)] = fab.andThen { x =>
+      val l = lPipe(x.map(_._1))
+      val r = rPipe(x.map(_._2))
+
+      underlying.zip(l)(r)
+    }
+  }
+
 }

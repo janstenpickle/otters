@@ -8,25 +8,34 @@ import otters.{AsyncStream, EitherStream, EitherStreamBase}
 trait EitherTSyntax {
   implicit class EitherTStreamOps[F[_], A, B](override val stream: EitherT[F, A, B]) extends EitherTStreamAsync[F, A, B]
 
-  implicit class EitherTStreamApply[F[_], G[_], H[_], A](stream: F[A]) {
-    def split[B, C](isLeft: A => Boolean, f: A => B, g: A => C)(implicit F: EitherStreamBase[F]): EitherT[F, B, C] =
-      EitherT(F.split[A, B, C](stream)(isLeft, f, g))
+  implicit class EitherTStreamApply[F[_], A](override val stream: F[A]) extends EitherTApply[F, A]
+  implicit class EitherTStreamApplyEither[F[_], A, B](override val stream: F[Either[A, B]])
+      extends EitherTApplyEither[F, A, B]
+}
 
-    def split(isLeft: A => Boolean)(implicit F: EitherStreamBase[F]): EitherT[F, A, A] =
-      EitherT(F.split[A](stream)(isLeft))
+trait EitherTApply[F[_], A] {
+  def stream: F[A]
 
-    def catchNonFatal[B](f: A => B)(implicit F: EitherStreamBase[F]): EitherT[F, Throwable, B] =
-      EitherT(F.catchNonFatal(stream)(f))
-  }
+  def split[B, C](isLeft: A => Boolean, f: A => B, g: A => C)(implicit F: EitherStreamBase[F]): EitherT[F, B, C] =
+    EitherT(F.split[A, B, C](stream)(isLeft, f, g))
 
-  implicit class EitherTStreamApplyEither[F[_], G[_], H[_], A, B](stream: F[Either[A, B]]) {
-    def toEitherT: EitherT[F, A, B] = EitherT(stream)
-  }
+  def split(isLeft: A => Boolean)(implicit F: EitherStreamBase[F]): EitherT[F, A, A] =
+    EitherT(F.split[A](stream)(isLeft))
+
+  def catchNonFatal[B](f: A => B)(implicit F: EitherStreamBase[F]): EitherT[F, Throwable, B] =
+    EitherT(F.catchNonFatal(stream)(f))
+}
+
+trait EitherTApplyEither[F[_], A, B] {
+  def stream: F[Either[A, B]]
+  def toEitherT: EitherT[F, A, B] = EitherT(stream)
 }
 
 trait EitherTExtendedSyntax[P[_, _], S[_, _]] {
   implicit class EitherTStreamExtOps[F[_], A, B](override val stream: EitherT[F, A, B])
       extends EitherTStreamPipeSink[F, P, S, A, B]
+
+  trait AllOps[F[_], A, B] extends EitherTStreamAsync[F, A, B] with EitherTStreamPipeSink[F, P, S, A, B]
 }
 
 trait EitherTStreamPipeSink[F[_], P[_, _], S[_, _], A, B] {
