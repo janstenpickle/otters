@@ -5,7 +5,7 @@ import _root_.monix.reactive.Observable
 import monix.execution.Scheduler
 import monix.reactive.observables.ConnectableObservable
 import monix.reactive.subjects.{ConcurrentSubject, ReplaySubject}
-import otters.EitherStreamFunctionPipeSink
+import otters._
 import otters.instances.monix.reactive
 
 import scala.collection.immutable
@@ -81,5 +81,58 @@ trait ObservableInstances {
         zip(lPipe(subject.map(_._1)))(rPipe(subject.map(_._2)))
       }
 
+    }
+
+  implicit def observablePipeInstances[I](
+    implicit s: Scheduler,
+    ev: EitherStreamFunctionPipeSink[Observable, Task, Task]
+  ): EitherStreamFunctionPipe[Observable, Task, Task, I] =
+    new EitherStreamFunctionPipe[Observable, Task, Task, I] {
+      override implicit val underlying: EitherStream[
+        Observable,
+        Task,
+        Task,
+        FunctionPipe[Observable, ?, ?],
+        FunctionSink[Observable, Task, ?, ?]
+      ] = ev
+
+      override def toEitherSinks[A, B, C, D, E](fab: FunctionPipe[Observable, I, Either[A, B]])(
+        lSink: FunctionSink[Observable, Task, A, C],
+        rSink: FunctionSink[Observable, Task, B, D]
+      )(combine: (C, D) => E): FunctionSink[Observable, Task, I, E] = fab.andThen { x =>
+        val subject = ReplaySubject[Either[A, B]]()
+
+        ConnectableObservable.unsafeMulticast(x, subject).connect()
+
+        val l = lSink(subject.collect { case Left(a) => a })
+        val r = rSink(subject.collect { case Right(b) => b })
+
+        l.flatMap(ll => r.map(combine(ll, _)))
+      }
+
+      override def toSinks[A, B, C, D, E](fab: FunctionPipe[Observable, I, (A, B)])(
+        lSink: FunctionSink[Observable, Task, A, C],
+        rSink: FunctionSink[Observable, Task, B, D]
+      )(combine: (C, D) => E): FunctionSink[Observable, Task, I, E] = fab.andThen { x =>
+        val subject = ReplaySubject[(A, B)]()
+
+        ConnectableObservable.unsafeMulticast(x, subject).connect()
+
+        val l = lSink(subject.map(_._1))
+        val r = rSink(subject.map(_._2))
+
+        l.flatMap(ll => r.map(combine(ll, _)))
+      }
+
+      override def fanOutFanIn[A, B, C, D](fab: FunctionPipe[Observable, I, (A, B)])(
+        lPipe: FunctionPipe[Observable, A, C],
+        rPipe: FunctionPipe[Observable, B, D]
+      ): FunctionPipe[Observable, I, (C, D)] = fab.andThen { x =>
+        val subject = ConcurrentSubject.replay[(A, B)]
+
+        ConnectableObservable.unsafeMulticast(x, subject).connect()
+
+        observableInstances.zip(lPipe(subject.map(_._1)))(rPipe(subject.map(_._2)))
+      }
     }
 }

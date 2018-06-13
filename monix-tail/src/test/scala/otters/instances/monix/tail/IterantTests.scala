@@ -12,7 +12,6 @@ import cats.laws.discipline.arbitrary._
 import org.scalacheck.{Arbitrary, Gen}
 import otters.laws.AsyncStreamLaws
 import otters.laws.discipline.{AsyncStreamTests, TestBase}
-import otters.{FunctionPipe, FunctionSink}
 
 import scala.concurrent.Future
 

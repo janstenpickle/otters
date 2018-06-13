@@ -1,7 +1,7 @@
 package otters.instances
 
 import akka.NotUsed
-import akka.stream.scaladsl.{Flow, Sink, Source}
+import akka.stream.scaladsl.{Flow, Source}
 
 package object akkastream extends AkkaStreamInstances {
   type Src[A] = Source[A, _]

@@ -17,19 +17,31 @@ trait WriterTSyntax {
       with WriterTStreamAsync[F, L, A]
       with WriterTStreamConcatOps[F, L, A]
 
-  implicit class WriterTStreamApply[F[_], A](stream: F[A]) {
-    def toWriter[L: Monoid](implicit F: Applicative[F]): WriterT[F, L, A] = WriterT.liftF(stream)
-    def toWriter[L](initial: L)(implicit F: Functor[F]): WriterT[F, L, A] = WriterT(stream.map(initial -> _))
-  }
+  implicit class WriterTStreamApply[F[_], A](override val stream: F[A]) extends WriterTApply[F, A]
 
-  implicit class WriterTStreamApplyTuple[F[_], L, A](stream: F[(L, A)]) {
-    def toWriter: WriterT[F, L, A] = WriterT(stream)
-  }
+  implicit class WriterTStreamApplyTuple[F[_], L, A](override val stream: F[(L, A)]) extends WriterTApplyTuple[F, L, A]
+}
+
+trait WriterTApply[F[_], A] {
+  def stream: F[A]
+  def toWriter[L: Monoid](implicit F: Applicative[F]): WriterT[F, L, A] = WriterT.liftF(stream)
+  def toWriter[L](initial: L)(implicit F: Functor[F]): WriterT[F, L, A] = WriterT(stream.map(initial -> _))
+}
+
+trait WriterTApplyTuple[F[_], L, A] {
+  def stream: F[(L, A)]
+  def toWriter: WriterT[F, L, A] = WriterT(stream)
 }
 
 trait WriterTExtendedSyntax[P[_, _], S[_, _]] {
   implicit class WriterTStreamExtOps[F[_], L, A](override val stream: WriterT[F, L, A])
       extends WriterTStreamPipeSink[F, P, S, L, A]
+
+  trait AllOps[F[_], L, A]
+      extends WriterTStreamGrouped[F, L, A]
+      with WriterTStreamAsync[F, L, A]
+      with WriterTStreamConcatOps[F, L, A]
+      with WriterTStreamPipeSink[F, P, S, L, A]
 }
 
 trait WriterTStreamGrouped[F[_], L, A] {

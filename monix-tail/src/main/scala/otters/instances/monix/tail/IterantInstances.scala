@@ -10,7 +10,7 @@ import scala.collection.immutable
 import scala.concurrent.duration.FiniteDuration
 
 trait IterantInstances {
-  implicit def iterantInstances[F[_]](implicit ev: Effect[F]): EitherStreamFunctionPipeSink[Iterant[F, ?], F, F] =
+  implicit def iterantInstances[F[_]](implicit F: Effect[F]): EitherStreamFunctionPipeSink[Iterant[F, ?], F, F] =
     new EitherStreamFunctionPipeSink[Iterant[F, ?], F, F] {
       override def map[A, B](fa: Iterant[F, A])(f: A => B): Iterant[F, B] = fa.map(f)
 
@@ -71,4 +71,48 @@ trait IterantInstances {
         zip(l)(r)
       }
     }
+
+  implicit def iterantPipeInstances[F[_], I](
+    implicit F: Effect[F],
+    ev: EitherStreamFunctionPipeSink[Iterant[F, ?], F, F]
+  ): EitherStreamFunctionPipe[Iterant[F, ?], F, F, I] = new EitherStreamFunctionPipe[Iterant[F, ?], F, F, I] {
+    override implicit val underlying: EitherStream[
+      Iterant[F, ?],
+      F,
+      F,
+      FunctionPipe[Iterant[F, ?], ?, ?],
+      FunctionSink[Iterant[F, ?], F, ?, ?]
+    ] = ev
+
+    override def toEitherSinks[A, B, C, D, E](fab: FunctionPipe[Iterant[F, ?], I, Either[A, B]])(
+      lSink: FunctionSink[Iterant[F, ?], F, A, C],
+      rSink: FunctionSink[Iterant[F, ?], F, B, D]
+    )(combine: (C, D) => E): FunctionSink[Iterant[F, ?], F, I, E] = fab.andThen { x =>
+      val l = lSink(x.collect { case Left(a) => a })
+      val r = rSink(x.collect { case Right(b) => b })
+
+      F.flatMap(l)(ll => F.map(r)(combine(ll, _)))
+    }
+
+    override def toSinks[A, B, C, D, E](fab: FunctionPipe[Iterant[F, ?], I, (A, B)])(
+      lSink: FunctionSink[Iterant[F, ?], F, A, C],
+      rSink: FunctionSink[Iterant[F, ?], F, B, D]
+    )(combine: (C, D) => E): FunctionSink[Iterant[F, ?], F, I, E] = fab.andThen { x =>
+      val l = lSink(x.map(_._1))
+      val r = rSink(x.map(_._2))
+
+      F.flatMap(l)(ll => F.map(r)(combine(ll, _)))
+    }
+
+    override def fanOutFanIn[A, B, C, D](fab: FunctionPipe[Iterant[F, ?], I, (A, B)])(
+      lPipe: FunctionPipe[Iterant[F, ?], A, C],
+      rPipe: FunctionPipe[Iterant[F, ?], B, D]
+    ): FunctionPipe[Iterant[F, ?], I, (C, D)] = fab.andThen { x =>
+      val l = lPipe(x.map(_._1))
+      val r = rPipe(x.map(_._2))
+
+      underlying.zip(l)(r)
+    }
+  }
+
 }

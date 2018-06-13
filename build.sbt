@@ -1,9 +1,9 @@
 val commonSettings = Seq(
   organization := "io.otters",
-  scalaVersion := "2.12.4",
-  crossScalaVersions := Seq("2.11.12", "2.12.4"),
-  addCompilerPlugin(("org.spire-math"  % "kind-projector" % "0.9.4").cross(CrossVersion.binary)),
-  addCompilerPlugin(("org.scalamacros" % "paradise"       % "2.1.0").cross(CrossVersion.full)),
+  scalaVersion := "2.12.6",
+  crossScalaVersions := Seq("2.11.12", "2.12.6"),
+  addCompilerPlugin(("org.spire-math"  % "kind-projector" % "0.9.7").cross(CrossVersion.binary)),
+  addCompilerPlugin(("org.scalamacros" % "paradise"       % "2.1.1").cross(CrossVersion.full)),
   scalacOptions ++= Seq(
     "-unchecked",
     "-feature",
@@ -54,6 +54,7 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Seq(
       Dependencies.cats,
       Dependencies.simulacrum,
+      Dependencies.shapeless,
       Dependencies.scalaCheck % Test,
       Dependencies.scalaTest  % Test
     ),
