@@ -11,6 +11,6 @@ object Dependencies {
   lazy val monixReactive = "io.monix"          %% "monix-reactive"   % "3.0.0-RC1"
   lazy val monixTail = "io.monix"              %% "monix-tail"       % "3.0.0-RC1"
   lazy val fs2 = "co.fs2"                      %% "fs2-io"           % "0.10.5"
-  lazy val shapeless = "com.chuusai" %% "shapeless" % "2.3.3"
+  lazy val shapeless = "com.chuusai"           %% "shapeless"        % "2.3.3"
   lazy val simulacrum = "com.github.mpilquist" %% "simulacrum"       % "0.12.0"
 }

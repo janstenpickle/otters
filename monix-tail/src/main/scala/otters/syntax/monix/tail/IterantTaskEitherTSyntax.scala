@@ -8,9 +8,8 @@ import otters.{FunctionPipe, FunctionSink}
 trait IterantTaskEitherTSyntax
     extends EitherTSyntax
     with EitherTExtendedSyntax[FunctionPipe[IterantTask, ?, ?], FunctionSink[IterantTask, Task, ?, ?]] {
-  implicit class EitherTPipeOps[A, B, C, D](
-    override val stream: EitherT[FunctionPipe[IterantTask, Either[A, B], ?], C, D]
-  ) extends AllOps[FunctionPipe[IterantTask, Either[A, B], ?], C, D]
+  implicit class EitherTPipeOps[A, B, C](override val stream: EitherT[FunctionPipe[IterantTask, A, ?], B, C])
+      extends AllOps[FunctionPipe[IterantTask, A, ?], B, C]
 
   implicit class EitherTFlowApply[A, B](override val stream: FunctionPipe[IterantTask, A, B])
       extends EitherTApply[FunctionPipe[IterantTask, A, ?], B]
