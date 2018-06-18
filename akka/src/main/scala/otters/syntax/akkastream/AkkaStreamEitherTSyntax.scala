@@ -6,12 +6,12 @@ import cats.data.EitherT
 import otters.syntax.{EitherTApply, EitherTApplyEither, EitherTExtendedSyntax, EitherTSyntax}
 
 trait AkkaStreamEitherTSyntax extends EitherTSyntax with EitherTExtendedSyntax[Flow[?, ?, NotUsed], Sink] {
-  implicit class EitherTFlowOps[A, B, C](override val stream: EitherT[Flow[A, ?, NotUsed], B, C])
-      extends AllOps[Flow[A, ?, NotUsed], B, C]
+  implicit class EitherTFlowOps[I, A, B](override val stream: EitherT[Flow[I, ?, NotUsed], A, B])
+      extends AllOps[Flow[I, ?, NotUsed], A, B]
 
-  implicit class EitherTFlowApply[A, B](override val stream: Flow[A, B, NotUsed])
-      extends EitherTApply[Flow[A, ?, NotUsed], B]
+  implicit class EitherTFlowApply[I, A](override val stream: Flow[I, A, NotUsed])
+      extends EitherTApply[Flow[I, ?, NotUsed], A]
 
-  implicit class EitherTFlowApplyEither[A, B, C](override val stream: Flow[A, Either[B, C], NotUsed])
-      extends EitherTApplyEither[Flow[A, ?, NotUsed], B, C]
+  implicit class EitherTFlowApplyEither[I, A, B](override val stream: Flow[I, Either[A, B], NotUsed])
+      extends EitherTApplyEither[Flow[I, ?, NotUsed], A, B]
 }

@@ -7,12 +7,12 @@ import otters.instances.monix.reactive.{Pipe, Sink}
 import otters.syntax.{EitherTApply, EitherTApplyEither, EitherTExtendedSyntax, EitherTSyntax}
 
 trait ObserableEitherTSyntax extends EitherTSyntax with EitherTExtendedSyntax[Pipe, Sink] {
-  implicit class EitherTPipeOps[A, B, C](override val stream: EitherT[FunctionPipe[Observable, A, ?], B, C])
-      extends AllOps[FunctionPipe[Observable, A, ?], B, C]
+  implicit class EitherTPipeOps[I, A, B](override val stream: EitherT[FunctionPipe[Observable, I, ?], A, B])
+      extends AllOps[FunctionPipe[Observable, I, ?], A, B]
 
-  implicit class EitherTFlowApply[A, B](override val stream: FunctionPipe[Observable, A, B])
-      extends EitherTApply[FunctionPipe[Observable, A, ?], B]
+  implicit class EitherTFlowApply[I, A](override val stream: FunctionPipe[Observable, I, A])
+      extends EitherTApply[FunctionPipe[Observable, I, ?], A]
 
-  implicit class EitherTFlowApplyEither[A, B, C](override val stream: FunctionPipe[Observable, A, Either[B, C]])
-      extends EitherTApplyEither[FunctionPipe[Observable, A, ?], B, C]
+  implicit class EitherTFlowApplyEither[I, A, B](override val stream: FunctionPipe[Observable, I, Either[A, B]])
+      extends EitherTApplyEither[FunctionPipe[Observable, I, ?], A, B]
 }

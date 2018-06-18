@@ -8,13 +8,12 @@ import otters.syntax.{WriterTApply, WriterTApplyTuple, WriterTExtendedSyntax, Wr
 import shapeless.LowPriority
 
 trait ObserableWriterTSyntax extends WriterTSyntax with WriterTExtendedSyntax[Pipe, Sink] {
-  implicit class WriterTPipeOps[L, A, M, B](override val stream: WriterT[FunctionPipe[Observable, (L, A), ?], M, B])
-      extends AllOps[FunctionPipe[Observable, (L, A), ?], M, B]
+  implicit class WriterTPipeOps[I, L, A](override val stream: WriterT[FunctionPipe[Observable, I, ?], L, A])
+      extends AllOps[FunctionPipe[Observable, I, ?], L, A]
 
-  implicit class WriterTFlowApply[L, A, B](override val stream: FunctionPipe[Observable, A, B])(
-    implicit lp: LowPriority
-  ) extends WriterTApply[FunctionPipe[Observable, A, ?], B]
+  implicit class WriterTFlowApply[I, A](override val stream: FunctionPipe[Observable, I, A])(implicit lp: LowPriority)
+      extends WriterTApply[FunctionPipe[Observable, I, ?], A]
 
-  implicit class WriterTFlowTupleApply[L, A, M, B](override val stream: FunctionPipe[Observable, (L, A), (M, B)])
-      extends WriterTApplyTuple[FunctionPipe[Observable, (L, A), ?], M, B]
+  implicit class WriterTFlowTupleApply[I, L, A](override val stream: FunctionPipe[Observable, I, (L, A)])
+      extends WriterTApplyTuple[FunctionPipe[Observable, I, ?], L, A]
 }

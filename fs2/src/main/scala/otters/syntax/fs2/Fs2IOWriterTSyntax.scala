@@ -9,12 +9,12 @@ import shapeless.LowPriority
 trait Fs2IOWriterTSyntax
     extends WriterTSyntax
     with WriterTExtendedSyntax[FunctionPipe[StreamIO, ?, ?], FunctionSink[StreamIO, IO, ?, ?]] {
-  implicit class WriterTPipeOps[L, A, M, B](override val stream: WriterT[FunctionPipe[StreamIO, (L, A), ?], M, B])
-      extends AllOps[FunctionPipe[StreamIO, (L, A), ?], M, B]
+  implicit class WriterTPipeOps[I, L, A](override val stream: WriterT[FunctionPipe[StreamIO, I, ?], L, A])
+      extends AllOps[FunctionPipe[StreamIO, I, ?], L, A]
 
-  implicit class WriterTFlowApply[L, A, B](override val stream: FunctionPipe[StreamIO, A, B])(implicit lp: LowPriority)
-      extends WriterTApply[FunctionPipe[StreamIO, A, ?], B]
+  implicit class WriterTFlowApply[I, A](override val stream: FunctionPipe[StreamIO, I, A])(implicit lp: LowPriority)
+      extends WriterTApply[FunctionPipe[StreamIO, I, ?], A]
 
-  implicit class WriterTFlowTupleApply[L, A, M, B](override val stream: FunctionPipe[StreamIO, (L, A), (M, B)])
-      extends WriterTApplyTuple[FunctionPipe[StreamIO, (L, A), ?], M, B]
+  implicit class WriterTFlowTupleApply[I, L, A](override val stream: FunctionPipe[StreamIO, I, (L, A)])
+      extends WriterTApplyTuple[FunctionPipe[StreamIO, I, ?], L, A]
 }
