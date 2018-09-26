@@ -1,7 +1,10 @@
 package otters.instances.fs2
 
 import _root_.fs2.{Stream => Fs2Stream}
-import cats.effect.Effect
+import cats.effect.{ConcurrentEffect, Effect}
+import cats.syntax.functor._
+import cats.syntax.flatMap._
+import fs2.concurrent.Topic
 import otters.{
   EitherStream,
   EitherStreamFunctionPipe,
@@ -49,7 +52,7 @@ trait Fs2Instances {
       override def collect[A, B](fa: Fs2Stream[F, A])(pf: PartialFunction[A, B]): Fs2Stream[F, B] = fa.collect(pf)
 
       override def tailRecM[A, B](a: A)(f: A => Fs2Stream[F, Either[A, B]]): Fs2Stream[F, B] =
-        Fs2Stream.syncInstance[F].tailRecM(a)(f)
+        Fs2Stream.monadInstance[F].tailRecM(a)(f)
 
       override def toEitherSinks[A, B, C, D, E](fab: Fs2Stream[F, Either[A, B]])(
         lSink: FunctionSink[fs2.Stream[F, ?], F, A, C],
@@ -83,7 +86,7 @@ trait Fs2Instances {
     }
 
   implicit def fs2PipeInstances[F[_], I](
-    implicit F: Effect[F],
+    implicit F: ConcurrentEffect[F],
     ev: EitherStreamFunctionPipeSink[Fs2Stream[F, ?], F, F]
   ): EitherStreamFunctionPipe[fs2.Stream[F, ?], F, F, I] = new EitherStreamFunctionPipe[Fs2Stream[F, ?], F, F, I] {
     override implicit val underlying: EitherStream[
@@ -108,10 +111,12 @@ trait Fs2Instances {
       lSink: FunctionSink[fs2.Stream[F, ?], F, A, C],
       rSink: FunctionSink[fs2.Stream[F, ?], F, B, D]
     )(combine: (C, D) => E): FunctionSink[fs2.Stream[F, ?], F, I, E] = fab.andThen { x =>
-      val l = lSink(x.map(_._1))
-      val r = rSink(x.map(_._2))
-
-      F.flatMap(l)(ll => F.map(r)(combine(ll, _)))
+      for {
+        topic <- Topic[F, Option[(A, B)]](None)
+        left <- lSink(topic.subscribe(10).collect { case Some((l, _)) => l })
+        right <- rSink(topic.subscribe(10).collect { case Some((_, r)) => r })
+        _ <- x.map(Some(_)).to(topic.publish).compile.drain
+      } yield combine(left, right)
     }
 
     override def fanOutFanIn[A, B, C, D](fab: FunctionPipe[fs2.Stream[F, ?], I, (A, B)])(

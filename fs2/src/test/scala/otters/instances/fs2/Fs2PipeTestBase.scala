@@ -1,8 +1,9 @@
 package otters
 
-import cats.effect.{Effect, IO}
+import cats.effect.{ContextShift, Effect, IO}
 import _root_.fs2.{Stream => Fs2Stream}
 import cats.Monad
+import cats.effect.internals.IOContextShift
 
 trait Fs2PipeTestBase[I]
     extends TestBase[FunctionPipe[Fs2Stream[IO, ?], I, ?], IO, FunctionSink[Fs2Stream[IO, ?], IO, I, ?], FunctionPipe[
@@ -10,6 +11,8 @@ trait Fs2PipeTestBase[I]
       ?,
       ?
     ], FunctionSink[Fs2Stream[IO, ?], IO, ?, ?]] {
+
+  implicit val cs: ContextShift[IO] = IOContextShift.global
 
   implicit val ev = otters.instances.fs2.fs2instances[IO]
 

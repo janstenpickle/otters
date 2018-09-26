@@ -2,7 +2,8 @@ package otters.instances.fs2
 
 import _root_.fs2.Stream
 import cats.Eq
-import cats.effect.IO
+import cats.effect.internals.IOContextShift
+import cats.effect.{ContextShift, IO}
 import cats.effect.laws.util.{TestContext, TestInstances}
 import cats.instances.all._
 import cats.laws.IsEq
@@ -13,6 +14,8 @@ import otters.laws.AsyncStreamLaws
 import otters.laws.discipline.{AsyncStreamTests, TestBase}
 
 class Fs2PipeInstancesTests extends TestBase with TestInstances {
+  implicit val cs: ContextShift[IO] = IOContextShift.global
+
   type TestPipe[A] = FunctionPipe[Stream[IO, ?], Int, A]
   implicit val asyncStreamLaws: AsyncStreamLaws[TestPipe, IO] = AsyncStreamLaws[TestPipe, IO]
 
